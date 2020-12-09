@@ -8,16 +8,9 @@ Created on Wed Dec  2 08:30:24 2020
 import numpy as np
 import matplotlib.pyplot as plt
 import zf_helper_funcs as hlp
-
+from zf_helper_funcs import rt
 
 #import saccade data 
-"""
--TODOs: 
-    -implement saving procedure for the saccade data to prevent long time waiting. Do this the latest, when you can reliably extract the saccades
-    +set a saccade magnitude threshold, and discard all eye movements not being unilateral. Then you need to do further stuff for error estimation
-    DONE
-    -
-"""
 root = r'E:\HSC_saccades'
 angthres = 5
 flthres = 0.3
@@ -31,7 +24,6 @@ saccadedata, datlens, nmnposidx, saccadedataout, saccadedatanoise = hlp.extract_
 
 
 #Plot each saccade
-rt = 1000 #sampling rate
 t = np.arange(0, saccadedata.shape[0]) / rt
 
 

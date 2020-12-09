@@ -22,6 +22,8 @@ figdict = {'axes.titlesize' : 25,
            'legend.fontsize' : 15}
 plt.style.use(figdict)
 
+rt = 1000 #sampling rate in Hz
+
 
 def extract_saccade_data(root, angthres, flthres):
     """
@@ -142,3 +144,103 @@ def extract_saccade_data(root, angthres, flthres):
         saccadedatanoise[:datlensnoise[idx],:,idx] = np.array(dat).T
 
     return saccadedata, datlens, nmnposidx, saccadedataout, saccadedatanoise
+
+
+def running_median(array,n):
+    """
+    Running median function
+    
+    Parameters
+    ----------
+    array: 1-D array
+        The array to be smoothed by the running median
+    N: integer:
+        Size of the running median window
+        
+    Returns
+    -------
+    rmarray: 1-D array
+        The running median-smoothed version of the array
+    """
+    idx = np.empty((array.shape[0], n)) #indices for all running medians
+    idx[:array.shape[0]-4,:] = np.arange(-(n-1)/2,((n-1)/2)+1) + np.arange(len(array)-n+1)[:,None]
+    idx[array.shape[0]-4:,:] = np.arange(-(n-1)/2,((n-1)/2)+1) + np.arange(len(array)-n+1,len(array))[:,None]
+    idx[idx<0] = None   
+    idx[idx>=len(array)] = None
+    rmarray = np.zeros(len(array)) #running median array preallocated
+    for i, window in enumerate(idx):
+        arr = window[~np.isnan(window)].astype(int)
+        rmarray[i] = np.median(array[arr])
+    
+    return rmarray
+    
+
+def detect_saccade(saccade, negativity):
+    """
+    Detect the saccade onset based on a threshold value
+    
+    Parameters
+    ----------
+    saccade: 1-D array
+        The array containing the angular eye position during saccade
+    negativity: integer
+        The integer value determining the saccade threshold. 1 means after the saccade the eye angle value is bigger, and -1 is for the opposite.
+        
+    Returns
+    -------
+    thrsac: 1-D array
+        The thresholded version of the saccade array.
+    saconset: int
+        The index of the saccade onset
+    sacoffset: int
+        The index of the saccade offset
+    """
+    meanonset = np.median(saccade[:10]) 
+    sacthres =  0.4+ 10*np.std(saccade[:15])
+    thres = False
+    saconset = 10
+    
+    if negativity < 0:
+        while thres == False:
+            if np.median(saccade[saconset:saconset+20]) <= meanonset - sacthres:
+                thres = True
+            else:
+                #print(i, np.median(saccade[i-5:i+5]))
+                saconset+=1
+    
+    elif negativity > 0:
+        while thres == False:
+            if np.median(saccade[saconset:saconset+10]) >= meanonset + sacthres:
+                thres = True 
+            else:
+                #print(i, np.median(saccade[i-5:i+5]))
+                saconset+=1
+    
+    #onset works well with current implementation, improve the offset detection.
+        
+    meanoffset = np.mean(saccade[-200:]) 
+    offthres = np.std(saccade[-150:])
+    off = False
+    sacoffset = saconset
+    
+    while off == False:
+        #print(sacoffset, np.abs(saccade[sacoffset] - saccade[sacoffset-150]), np.mean(saccade[sacoffset-150:sacoffset]), meanoffset-offthres, meanoffset+offthres)
+        if np.abs(saccade[sacoffset] - saccade[sacoffset-150]) <= 0.2*offthres \
+          and np.mean(saccade[sacoffset-150:sacoffset]) <= meanoffset + 4*offthres\
+          and np.mean(saccade[sacoffset-150:sacoffset]) >= meanoffset - 4*offthres:  
+            
+            print('Found')
+            off = True
+        
+        elif sacoffset == len(saccade)-1:
+            print('Last timepoint taken')
+            off = True
+            sacoffset = -1
+                
+        else:
+            sacoffset += 1
+        
+    return saconset, sacoffset
+    #-2 to get the right index. np.diff shifts the index by one (i.e. the difference between idx 0 and 1 has the np.diff
+    #index of 0), and secondly saconset returns the index where thrsac already changed, and we want the index right before
+    #that (i.e. the index right before the last thrsac transition)
