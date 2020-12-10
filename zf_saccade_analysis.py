@@ -158,3 +158,148 @@ axs[0].get_yaxis().set_major_formatter(mpl.ticker.ScalarFormatter())
 axs[1].set_yticks(np.linspace(2,20,10))
 axs[1].get_yaxis().set_major_formatter(mpl.ticker.ScalarFormatter())
 """
+
+#find average saccade for positive and negative saccades
+anglocsps = [ [] for _ in range(np.max(saclens).astype(int)) ] #nested list containing the values over all trials for 
+                                                               #a given time bin
+anglocsns = [ [] for _ in range(np.max(saclens).astype(int)) ] #same as above for negative saccades
+
+
+for saccade in possaccades:
+    for idx, angle in enumerate(saccade):
+        anglocsps[idx].append(angle)
+
+for saccade in negsaccades:
+    for idx, angle in enumerate(saccade):
+        anglocsns[idx].append(angle)
+        
+anglocsps = np.array(anglocsps)
+anglocsns = np.array(anglocsns)
+
+meantimebinsp = np.empty(anglocsps.shape[0]) #the array containing average eye poisition per time bin for positive saccades
+meantimebinsp[:] = None
+vartimebinsp = np.empty(anglocsps.shape[0]) #the array containing eye poisition variance per time bin for positive saccades
+vartimebinsp[:] = None
+setimebinsp = np.empty(anglocsps.shape[0]) #the array containing eye poisition SE per time bin for positive saccades
+setimebinsp[:] = None
+
+meantimebinsn = np.empty(anglocsns.shape[0]) #same as above for negative saccades
+meantimebinsn[:] = None
+vartimebinsn = np.empty(anglocsps.shape[0])
+vartimebinsn[:] = None
+setimebinsn = np.empty(anglocsps.shape[0]) 
+setimebinsn[:] = None
+
+for idx, timebin in enumerate(anglocsps):
+    timebin = np.array(timebin)[~np.isnan(timebin)]
+    if len(timebin) == 0: #skip time bins which have no data point in the given trial
+        continue
+    meantimebinsp[idx] = np.mean(timebin)
+    vartimebinsp[idx] = np.var(timebin) #variance
+    setimebinsp[idx] = np.std(timebin) / np.sqrt(len(timebin)) #standard error of the mean
+    
+for idx, timebin in enumerate(anglocsns):
+    timebin = np.array(timebin)[~np.isnan(timebin)]
+    if len(timebin) == 0: #skip time bins which have no data point in the given trial
+        continue
+    meantimebinsn[idx] = np.mean(timebin)
+    vartimebinsn[idx] = np.var(timebin) #variance
+    setimebinsn[idx] = np.std(timebin) / np.sqrt(len(timebin))
+
+#plotting
+fig, axs = plt.subplots(1,2,sharex=True)
+fig.suptitle('Average saccades', size=30)
+
+#plot the average
+axs[0].plot(meantimebinsp, 'r-', label='Average')
+axs[1].plot(meantimebinsn, 'b-', label='Average')
+
+#shade the standard error
+t = np.arange(0, len(meantimebinsp))
+axs[0].fill_between(t, meantimebinsp+2*setimebinsp, meantimebinsp-2*setimebinsp, facecolor='r', alpha=0.5, 
+                   label='Average$\pm 2\cdot SE$')
+axs[1].fill_between(t, meantimebinsn+2*setimebinsn, meantimebinsn-2*setimebinsn, facecolor='b', alpha=0.5,
+                   label='Average$\pm 2\cdot SE$')
+
+axs[0].set_ylabel('Eye position (norm)')
+axs[0].set_xlabel('Time [ms]')
+axs[0].set_title('Positive saccade (n=%i)' %(len(possaccades)))
+axs[1].set_title('Negative saccade (n=%i)' %(len(negsaccades)))
+axs[0].legend()
+axs[1].legend()
+
+#do the same plot but with all traces in grey
+fig, axs = plt.subplots(1,2,sharex=True)
+fig.suptitle('Average saccades', size=30)
+
+#Plot the traces in gray with less linewidth
+lab = None
+#positive
+for idx, sac in enumerate(possaccades):
+    if idx == len(possaccades)-1:
+        lab='Single trial'
+    axs[0].plot(sac, 'gray', linewidth=1, label=lab)
+
+lab = None
+#negative
+for idx, sac in enumerate(negsaccades):
+    if idx == len(negsaccades)-1:
+        lab='Single trial'
+    axs[1].plot(sac, 'gray', linewidth=1, label=lab)
+
+#plot the average
+axs[0].plot(meantimebinsp, 'r-', label='Average', linewidth=2)
+axs[1].plot(meantimebinsn, 'b-', label='Average', linewidth=2)
+axs[0].set_ylabel('Eye position (norm)')
+axs[0].set_xlabel('Time [ms]')
+axs[0].set_title('Positive saccades (n=%i)' %(len(possaccades)))
+axs[1].set_title('Negative saccades (n=%i)' %(len(negsaccades)))
+axs[0].legend()
+axs[1].legend()
+
+#calculate root mean square error for each timebin -> this is the standard deviation by definition
+#see https://en.wikipedia.org/wiki/Root-mean-square_deviation
+
+#calculate root mean square error for each trial (positive/negative)
+RMSp = np.empty(possaccades.shape[0]) #the array of average RMS per trial (positive saccades)
+RMSp[:] = None
+RMSn = np.empty(negsaccades.shape[0]) #the array of average RMS per trial (negative saccades)
+RMSn[:] = None
+
+for idx, sac in enumerate(possaccades):
+    n = sac.shape[0]
+    meansac = meantimebinsp[:n]
+    RMS = np.sqrt( np.sum((meansac-sac)**2) / n)
+    RMSp[idx] = RMS
+
+for idx, sac in enumerate(negsaccades):
+    n = sac.shape[0]
+    meansac = meantimebinsn[:n]
+    RMS = np.sqrt( np.sum((meansac-sac)**2) / n)
+    RMSn[idx] = RMS    
+
+#plot the standard deviation for each time bin and RMS per each trial
+fig, axs = plt.subplots(1,2)
+fig.suptitle('Saccadic noise', size=30)
+axs[0].plot(np.sqrt(vartimebinsp), 'r.', label='Positive', markersize=3)
+axs[0].plot(np.sqrt(vartimebinsn), 'b.', label='Negative', markersize=3)
+axs[1].plot(RMSp, 'r.', label='Positive', markersize=3)
+axs[1].plot(RMSn, 'b.', label='Negative', markersize=3)
+
+axs[0].set_title('Per time bin')
+axs[0].set_ylabel('Standard deviation $\sigma$')
+axs[0].set_xlabel('Time [ms]')
+axs[1].set_title('Per trial')
+axs[1].set_ylabel('RMSE')
+axs[1].set_xlabel('Trial ID')
+axs[0].legend()
+axs[1].legend()
+
+#plot saccade velocity to compare with saccade std per timebin
+fig, ax = plt.subplots(1,1)
+ax.set_title('Velocity of the average saccade')
+ax.plot(np.diff(meantimebinsp)*rt, 'r.', label='Positive')
+ax.plot(np.diff(meantimebinsn)*rt, 'b.', label='Negative')
+ax.set_ylabel(r'Angular velocity [$\frac{\circ}{s}]$')
+ax.set_xlabel('Time [ms]')
+ax.legend()
