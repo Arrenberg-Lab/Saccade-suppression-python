@@ -12,6 +12,8 @@ from zf_helper_funcs import rt
 import sys
 sys.path.insert(0, r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\OnlineSaccadeDetection-master\python')
 import matplotlib as mpl
+import sklearn.linear_model as linreg
+import statsmodels.api as sm
 
 #import saccade data 
 root = r'E:\HSC_saccades'
@@ -300,6 +302,38 @@ fig, ax = plt.subplots(1,1)
 ax.set_title('Velocity of the average saccade')
 ax.plot(np.diff(meantimebinsp)*rt, 'r.', label='Positive')
 ax.plot(np.diff(meantimebinsn)*rt, 'b.', label='Negative')
-ax.set_ylabel(r'Angular velocity [$\frac{\circ}{s}]$')
+ax.set_ylabel(r'Angular velocity $[\frac{norm}{s}]$')
 ax.set_xlabel('Time [ms]')
 ax.legend()
+
+#check velocity-noise relationship
+#positive saccades
+dsmtrp = sm.add_constant(np.sqrt(vartimebinsp[1:]))
+dsmtrp
+regp = sm.OLS(np.diff(meantimebinsp)*rt, dsmtrp)
+pmod = regp.fit()
+p_valuep = pmod.summary2().tables[1]['P>|t|'][1] #in some sessions this somehow returns nan!
+t_valuep = pmod.summary2().tables[1]['t'][1]
+
+#negative saccades
+dsmtrn = sm.add_constant(np.sqrt(vartimebinsn[~np.isnan(vartimebinsn)][1:]))
+regn = sm.OLS(np.diff(meantimebinsn[~np.isnan(meantimebinsn)])*rt, dsmtrn)
+nmod = regn.fit()
+p_valuen = nmod.summary2().tables[1]['P>|t|'][1]
+t_valuen = nmod.summary2().tables[1]['t'][1]
+
+fig, axs = plt.subplots(1,2, sharex=True)
+fig.suptitle('Noise-velocity relationship', size=30)
+axs[0].plot(np.sqrt(vartimebinsp[1:]), np.diff(meantimebinsp)*rt, 'r.', label='Data')
+axs[0].plot(np.sqrt(vartimebinsp[1:]), pmod.fittedvalues, 'k-', label='Linear fit')
+axs[1].plot(np.sqrt(vartimebinsn[~np.isnan(vartimebinsn)][1:]), np.diff(meantimebinsn[~np.isnan(meantimebinsn)])*rt, 
+           'b.', label='Data')
+axs[1].plot(np.sqrt(vartimebinsn[~np.isnan(vartimebinsn)][1:]), nmod.fittedvalues, 'k-', label='Linear fit')
+
+axs[0].set_ylabel(r'Eye velocity $[\frac{norm}{s}]$')
+axs[0].set_xlabel('Noise $\sigma$')
+axs[0].set_title('Positive average saccade, t=%.2f' %(t_valuep))
+axs[1].set_title('Negative average saccade, t=%.2f' %(t_valuen))
+
+for ax in axs:
+    ax.legend()
