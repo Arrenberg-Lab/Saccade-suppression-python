@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
+from skimage import io, filters
 
 #Script for functions used in the saccadic suppression project
 
@@ -244,3 +245,80 @@ def detect_saccade(saccade, negativity):
     #-2 to get the right index. np.diff shifts the index by one (i.e. the difference between idx 0 and 1 has the np.diff
     #index of 0), and secondly saconset returns the index where thrsac already changed, and we want the index right before
     #that (i.e. the index right before the last thrsac transition)
+    
+
+def gabor_image_filter(img, gwl, theta, sigma_x, sigma_y, offset, n_stds, mode='reflect', returnimg=True):
+    """
+    Filter an image with a 2-D Gabor kernel.
+    
+    Parameters
+    ----------
+    img: n x m array
+        The array of the image with the size n times m
+   gwl: float
+        The wavelength of the Gabor filter in pixels. The inverse of this is the spatial frequency.
+        Due to Nyquist frequency this value cannot be smaller than 2
+    theta: float
+        The angle of the Gabor filter in radians
+    sigma_x: float
+        The standard deviation along x-direction, determining the extent of the filter along that direction. Note that
+        rotation with theta occurs beforehand. If theta is pi, then sigma_x determines the extent in vertical 
+        direction
+    sigma_y: float
+        The standard deviation along y-direction, determining the extent of the filter along that direction. Note that
+        rotation with theta occurs beforehand. If theta is pi, then sigma_y determines the extent in horizontal 
+        direction
+    offset: float
+        The Gabor filter angle offset in radians
+    n_stds: float
+        The Gaussian standard deviation cutoff value for the Gabor filter
+    mode: string, {‘constant’, ‘nearest’, ‘reflect’, ‘mirror’, ‘wrap’}
+        The mode of convolution. See https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.convolve.html
+        for how each mode works
+    returnimg: boolean
+        If True, the whole image is convolved and returned. If false, only the kernel is returned
+   
+    Returns
+    -------
+    kerngab: k x l array
+        The complex Gabor kernel. Real part has the cosine component (symmetric), imaginary the sine component
+        (antisymmetric)
+    gaborr: n x m array
+        The real part of the convolved image with the Gabor filter
+    gabori: n x m array
+        The imaginary part of the convolved image with the Gabor filter
+    """
+    kerngab = filters.gabor_kernel(frequency=1/gwl, theta=theta, sigma_x=sigma_x, sigma_y=sigma_y, offset=offset,
+                                   n_stds=n_stds)
+    if returnimg == False:
+        return kerngab
+    
+    else:
+        gaborr, gabori = filters.gabor(img, mode=mode,frequency=1/gwl, theta=theta, sigma_x=sigma_x, sigma_y=sigma_y, 
+                                       offset=offset, n_stds=n_stds)
+        return kerngab, gaborr, gabori
+
+
+def gaussian_image_filter(img, sigma, mode='reflect', truncate=3):
+    """
+    Filter an image with a 2-D Gaussian kernel
+    
+    Parameters
+    ----------
+    img: n x m array
+        The array of the image with the size n times m       
+    sigma: float
+        The standard deviation of the kernel
+    mode: string, {‘constant’, ‘nearest’, ‘reflect’, ‘mirror’, ‘wrap’}
+        The mode of convolution. See https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.convolve.html
+        for how each mode works  
+    truncate: float
+        The Gaussian standard deviation cutoff value
+        
+    Returns
+    -------
+    gaussimg: n x m array
+        The filtered image
+    """
+    gaussimg = filters.gaussian(img, sigma=sigma, mode='reflect', truncate=3)
+    return gaussimg
