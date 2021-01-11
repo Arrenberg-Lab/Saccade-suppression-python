@@ -12,6 +12,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from skimage import io, filters
+try:
+    from numba import jit
+except ImportError:
+    def jit(nopython):
+        def decorator_jit(func):
+            return func
+        return decorator_jit
 
 #Script for functions used in the saccadic suppression project
 
@@ -20,7 +27,9 @@ figdict = {'axes.titlesize' : 25,
            'axes.labelsize' : 20,
            'xtick.labelsize' : 15,
            'ytick.labelsize' : 15,
-           'legend.fontsize' : 15}
+           'legend.fontsize' : 15,
+           'figure.titlesize' : 25,
+           'image.cmap' : 'gray'}
 plt.style.use(figdict)
 
 rt = 1000 #sampling rate in Hz
@@ -322,3 +331,244 @@ def gaussian_image_filter(img, sigma, mode='reflect', truncate=3):
     """
     gaussimg = filters.gaussian(img, sigma=sigma, mode='reflect', truncate=3)
     return gaussimg
+
+
+@jit(nopython=True)
+def leaky_integrate_and_fire(stimulus, deltat=0.00005, v_zero=0.0, threshold=1.0, v_base=0.0,
+             v_offset=-10.0, mem_tau=0.015, noise_strength=0.05,
+             input_scaling=60.0, ref_period=0.001):
+    """
+    1-D leaky integrate and fire neuron.
+    
+    Parameters
+    ----------
+    stimulus: 1-D array
+        The stimulus over time driving the neuron
+    deltat: float
+        Integration time step in seconds (Euler method to solve the differential equation numerically)
+    v_zero: float
+        The initial value of the membrane voltage
+    threshold: float
+        The threshold value for membrane voltage to record a spike and to reset to baseline voltage
+    v_base: float
+        The baseline membrane voltage
+    v_offset: float
+        The offset of the baseline membrane voltage. Without any stimulus perturbation, the membrane voltage
+        decays to this value in steady state
+    mem_tau: float
+        The membrane voltage time constant in seconds
+    noise_strength: float
+        The strenght of the Gaussian noise used to jitter the stimulus
+    input_scaling: float
+        The input scaling which determines the stimulus sensitivity of the neuron
+    ref_period: float
+        The refractory period length in seconds
+        
+    Returns
+    --------
+    spike_times: 1-D array
+        The array containing the time stamps of the spikes occured.
+    """
+    v_mem = v_zero
+
+    # prepare noise:    
+    noise = np.random.randn(len(stimulus))
+    noise *= noise_strength / np.sqrt(deltat) # scale white noise with square root of time step, coz else they are 
+                                              # dependent, this makes it time step invariant.
+    # integrate:
+    spike_times = []
+    for i in range(len(stimulus)):
+        v_mem += (v_base - v_mem + v_offset + 
+                  stimulus[i] * input_scaling + noise[i]) / mem_tau * deltat #membrane voltage (integrate & fire)
+
+        # refractory period:
+        if len(spike_times) > 0 and (deltat * i) - spike_times[-1] < ref_period + deltat/2:
+            v_mem = v_base
+
+        # threshold crossing:
+        if v_mem > threshold:
+            v_mem = v_base
+            spike_times.append(i * deltat)
+
+    return np.array(spike_times)
+
+
+def img_move(x0, y0, angle, speed):
+    """
+    Calculate the image location for the next frame
+    
+    Parameters
+    -----------
+    x0: integer
+        The index of the initial pixel value in x direction. Initial pixel is the center of the image patch
+    y0: integer
+        The index of the initial pixel value in y direction. Initial pixel is the center of the image patch
+    angle: float
+        The movement direction angle in radians
+    speed: float
+        The movement speed in pixel/ms
+    
+    Returns
+    -------
+    xnew: float
+        The new pixel location x value
+    ynew: float
+        The new pixel location y value
+    """
+    xnew = np.cos(angle)*speed + x0    
+    ynew = np.sin(angle)*speed + y0
+    return xnew, ynew
+
+
+def generate_grating(rsl, imgsf):
+    """
+    Generate a grating. For now vertical, maybe in the future different angles can be added with an angle variable.
+    
+    Parameters
+    ----------
+    rsl: float
+        The resolution of the image in pixels per degrees
+    imgsf: float
+        The spatial frequency of the image in degrees
+    
+    Returns
+    --------
+    img: 2-D array
+        The grating image array
+    gr: 2-D array
+        The grating in single cycle
+    """
+    #initial values
+    maxsf = rsl / 2 #maximum spatial frequency achievable with the resolution, 1/°
+    imgsize = [180, 360] #the screen size in degrees, first is elevation and second is azimuth
+    img = np.zeros(np.array(imgsize)*rsl) #the preallocated image matrix
+    #Give error if image spatial frequency is bigger than maximum possible
+    if imgsf > maxsf:    
+        raise(ValueError('Image spatial frequency is too big to be adequately resolved. Maximum possible value is %.1f' %(maxsf)))
+    
+    else:
+        pass
+
+    #create the single grating
+    #first generate the grating as vertical regardless of future grating angles
+    grwl = rsl/imgsf #the wavelength of the image in pixels    
+    gr = np.ones([img.shape[0],np.round(grwl).astype(int)])
+ 
+    if imgsf <= rsl/4:
+        #If there are at least 4 lines per single cycle of the grating, smoothen the transition with a sine
+        grsin = (np.sin(2*np.pi*1/grwl*np.arange(0, grwl, grwl/gr.shape[1]))+1)/2 
+        gr *= grsin  
+    
+    else:
+        #If single cycle is 2 or 3 lines, create a coarse grating
+        #Issue in case of 3 lines per period: the transition between cycles is too sharp
+        bandarray = np.linspace(0,1,np.round(grwl).astype(int))
+        gr *= bandarray
+        
+    #create the image grating
+    img = np.tile(gr, np.int(img.shape[1]/gr.shape[1]))
+    return img, gr
+
+
+def crop_gabor_filter(rsl, sigma, sf, flts):
+    """
+    Crop a Gabor filter with a given size and spatial frequency
+    
+    Parameters
+    ----------
+    rsl: float
+        The resolution of the image in pixel per degrees.
+    sigma: float
+        The standard deviation of the Gabor filter. This value is kept the same for both x and y directions, hence 
+        the resulting filter has a circular shape.
+    sf: float
+        The spatial frequency of the filter in degrees
+    flts: float
+        The size of the filter in degrees
+    
+    Returns
+    --------
+    newgabr: 2-D array
+        The circular cropped real part of the Gabor filter (symmetric, cosine)
+    newgabi: 2-D array
+        The circular cropped imaginary part of the Gabor filter (antisymmetric, sine)
+    """
+    maxsf = rsl / 2 #maximum spatial frequency achievable with the resolution, 1/°
+    if sf > maxsf:    
+        raise(ValueError('Image spatial frequency is too big to be adequately resolved. Maximum possible value is %.1f' %(maxsf)))
+
+    gkernparams = {'gwl': rsl/sf,
+                   'theta': np.deg2rad(0),
+                   'sigma_x' : sigma,
+                   'sigma_y' : sigma,
+                   'offset' : np.deg2rad(0),
+                   'n_stds': 3}
+    kerngab = gabor_image_filter(None, **gkernparams, returnimg=False) #everything of Gabor is now in pixels
+    flts *= rsl
+    
+    if kerngab.shape[0] < flts: #return error if the initial gabor filter is smaller than expected filter size
+        raise(ValueError("The size of the initial Gabor filter is too small, Please increase sigma."))
+        
+    fltc = np.array(kerngab.shape[0])/2-1 #the center index of the initital big filter
+    flte = [np.round(fltc-flts/2).astype(int),np.round(fltc+flts/2).astype(int)] #extent of the filter. indices to be 
+                                                                                #taken from kerngab to generate the 
+                                                                                #filter
+    newgabi = kerngab.imag.copy()[flte[0]:flte[1], flte[0]:flte[1]] #imaginary part of the filter cropped rectangular
+    xlocs, ylocs = np.meshgrid(np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]),
+                           np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]))
+
+    circlearrayi = xlocs**2 + ylocs**2 <= (newgabi.shape[0]/2+1)**2
+    newgabi *= circlearrayi
+    newgabi -= np.min(newgabi)
+    newgabi /= np.max(newgabi)
+    
+    newgabr = kerngab.real.copy()[flte[0]:flte[1], flte[0]:flte[1]] #real part of the filter cropped rectangular
+    xlocs, ylocs = np.meshgrid(np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]),
+                           np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]))
+    circlearrayr = xlocs**2 + ylocs**2 <= (newgabr.shape[0]/2)**2
+    newgabr *= circlearrayr
+    newgabr -= np.min(newgabr)
+    newgabr /= np.max(newgabr)
+    
+    return newgabr, newgabi
+
+
+def filters_activity(img, fltarray):
+    """
+    Extract the filter activity from the filter bank of equal size for a given image.
+    
+    Parameters
+    ----------
+    img: 2-D array
+        The stimulus image.
+    fltarray: Nested array
+        The array containing the filters of equal size. Each filter is a sub-array within this array.
+    
+    Returns
+    -------
+    fltsact: 2-D array
+        The activity of each filter summed over all pixels of each of the image patch.
+    xext: 2-D array
+        The start and stop indices of the image patches along x direction.
+    yext: 2-D array
+        The start and stop indices of the image patches along y direction.
+    """
+    fltsize = fltarray[0].shape[0] #since the filters are quadratic arrays, getting the shape in one dimension is
+                                   #sufficient to get the size 
+    imgxdiv = img.shape[1] // fltsize #the number of patches along x direction
+    imgydiv = img.shape[0] // fltsize #the number of patches along y direction
+    fltsact = np.zeros([fltarray.shape[0], imgxdiv*imgydiv]) #shape number of patches x number of filters with the  
+                                                             #same size but different spatial frequencies.
+    xext = np.zeros([imgxdiv*imgydiv,2]) #start and stop of x indexes for each image patch
+    yext = np.zeros([imgxdiv*imgydiv,2]) #start and stop of y indexes for each image patch
+
+    for i in range(imgxdiv):
+        for j in range(imgydiv):
+            patch = img[fltsize*j:fltsize*(j+1), fltsize*i:fltsize*(i+1)]
+            xext[imgydiv*i+j, :] = [fltsize*j, fltsize*(j+1)]
+            yext[imgydiv*i+j, :] = [fltsize*i, fltsize*(i+1)]
+            for idx, flt in enumerate(fltarray):
+                fltsact[idx, imgydiv*i+j] = np.sum(patch*flt) #the filter activity summed over each pixel.
+                
+    return fltsact, xext.astype(int), yext.astype(int)       
+            #print(imgydiv*i+j, i ,j) #this to debug, imgydiv*... ensures the flattening of the index
