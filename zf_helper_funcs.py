@@ -460,7 +460,7 @@ def generate_grating(rsl, imgsf):
     return img
 
 
-def crop_gabor_filter(rsl, sigma, sf, flts):
+def crop_gabor_filter(rsl, sigma, sf, flts, ph):
     """
     Crop a Gabor filter with a given size and spatial frequency
     
@@ -475,6 +475,8 @@ def crop_gabor_filter(rsl, sigma, sf, flts):
         The spatial frequency of the filter in degrees
     flts: float
         The size of the filter in degrees
+    ph: float
+        The phase of the filter in degrees
     
     Returns
     --------
@@ -493,7 +495,7 @@ def crop_gabor_filter(rsl, sigma, sf, flts):
                    'theta': np.deg2rad(0),
                    'sigma_x' : sigma,
                    'sigma_y' : sigma,
-                   'offset' : np.deg2rad(0),
+                   'offset' : np.deg2rad(ph),
                    'n_stds': 3}
     kerngab = gabor_image_filter(None, **gkernparams, returnimg=False) #everything of Gabor is now in pixels
     flts *= rsl
@@ -543,7 +545,7 @@ def circle_crop(circlearray, gaborarray):
     return croppedarray
 
 
-def filters_activity(img, fltarray):
+def filters_activity(img, flt):
     """
     Extract the filter activity from the filter bank of equal size for a given image.
     
@@ -551,24 +553,23 @@ def filters_activity(img, fltarray):
     ----------
     img: 2-D array
         The stimulus image.
-    fltarray: Nested array
-        The array containing the filters of equal size. Each filter is a sub-array within this array.
+    fltarray: 2-D
+        The filter kernel array.
     
     Returns
     -------
-    fltsact: 2-D array
-        The activity of each filter summed over all pixels of each of the image patch.
+    fltact: 2-D array
+        The activity of the filter summed over all pixels of each image patch.
     xext: 2-D array
-        The start and stop indices of the image patches along x direction.
+        The start and stop index of the image patches along x direction.
     yext: 2-D array
         The start and stop indices of the image patches along y direction.
     """
-    fltsize = fltarray[0].shape[0] #since the filters are quadratic arrays, getting the shape in one dimension is
+    fltsize = flt.shape[0] #since the filters are quadratic arrays, getting the shape in one dimension is
                                    #sufficient to get the size 
     imgxdiv = img.shape[1] // fltsize #the number of patches along x direction
     imgydiv = img.shape[0] // fltsize #the number of patches along y direction
-    fltsact = np.zeros([fltarray.shape[0], imgxdiv*imgydiv]) #shape number of patches x number of filters with the  
-                                                             #same size but different spatial frequencies.
+    fltact = np.zeros(imgxdiv*imgydiv) #shape number of patches
     xext = np.zeros([imgxdiv*imgydiv,2]) #start and stop of x indexes for each image patch
     yext = np.zeros([imgxdiv*imgydiv,2]) #start and stop of y indexes for each image patch
 
@@ -577,8 +578,53 @@ def filters_activity(img, fltarray):
             patch = img[fltsize*j:fltsize*(j+1), fltsize*i:fltsize*(i+1)]
             xext[imgydiv*i+j, :] = [fltsize*j, fltsize*(j+1)]
             yext[imgydiv*i+j, :] = [fltsize*i, fltsize*(i+1)]
-            for idx, flt in enumerate(fltarray):
-                fltsact[idx, imgydiv*i+j] = np.sum(patch*flt) #the filter activity summed over each pixel.
-                
-    return fltsact, xext.astype(int), yext.astype(int)       
+            fltact[imgydiv*i+j] = np.sum(patch*flt) #the filter activity summed over each pixel.
             #print(imgydiv*i+j, i ,j) #this to debug, imgydiv*... ensures the flattening of the index
+    return fltact, xext.astype(int), yext.astype(int)       
+
+
+def population_activity(gfsf, gfph, gfsz, gfilters, img):
+    """
+    Get the population activity of all filters considered.
+    
+    Parameters
+    ----------
+    gfsf: 1-D array
+        The spatial frequencies in degrees used for filters.
+    gfph: 1-D array
+        The phases in degrees used for filters.
+    gfsz: 1-D array
+        The sizes in pixels used for filters
+    gfilter: Nested array
+        The array containing all the filter kernels. First 2 dimensions are size and spatial frequency, each element
+        is then n*n*m array where n is the length of the kernel side (e.g. 20 pixels, can also be thought as the 
+        radius of the kernel) and m is the number of phases considered.
+    img: 2-D array
+        The image array
+        
+    Returns
+    -------
+    gacts: 3-D array
+        The array containing the filter activity for each patch of the image. 1st dimension is for spatial frequency,
+        2nd for phase and 3rd for size. Each element contains the filter activity for each of the image patch outlined
+        by the indices given in pext
+    pext: 2-D array
+        The array containing the indices of the image patches for each size. First dimension is filter size, 2nd 
+        dimension is for x and y coordinates (e.g. pext[0,0] returns the x indices of the patches for the first size
+        i.e. gfsz[0] and pest[0,1] the y indices respectively)
+    """
+    gacts = np.zeros([len(gfsf), len(gfph), len(gfsz)], dtype=object) #Gabor kernel activities
+    pext = np.zeros([len(gfsz), 2], dtype=object) #Patch extends for each Gabor filter
+
+    for i, fszs in enumerate(gfilters): #iterate over size
+        for j, fsfs in enumerate(fszs): #iterate over spatial frequency
+            for k in range(fsfs.shape[2]): #iterate over phase
+                fltact, xext, yext = filters_activity(img, fsfs[:,:,k])        
+                gacts[j,k,i] = fltact
+
+        #since for the same sized filters the patches also have the same size, the patch x and y indices only have to be 
+        #given for different sizes of filters (hence shape sz*2 where 2d dimension is for x and y index arrays 
+        #respectively)
+        pext[i,0] = xext #the x indices of the patches
+        pext[i,1] = yext #the y indices of the patches
+    return gacts, pext
