@@ -435,13 +435,10 @@ def generate_grating(rsl, imgsf):
     --------
     img: 2-D array
         The grating image array
-    gr: 2-D array
-        The grating in single cycle
     """
     #initial values
     maxsf = rsl / 2 #maximum spatial frequency achievable with the resolution, 1/°
     imgsize = [180, 360] #the screen size in degrees, first is elevation and second is azimuth
-    img = np.zeros(np.array(imgsize)*rsl) #the preallocated image matrix
     #Give error if image spatial frequency is bigger than maximum possible
     if imgsf > maxsf:    
         raise(ValueError('Image spatial frequency is too big to be adequately resolved. Maximum possible value is %.1f' %(maxsf)))
@@ -452,22 +449,15 @@ def generate_grating(rsl, imgsf):
     #create the single grating
     #first generate the grating as vertical regardless of future grating angles
     grwl = rsl/imgsf #the wavelength of the image in pixels    
-    gr = np.ones([img.shape[0],np.round(grwl).astype(int)])
- 
-    if imgsf <= rsl/4:
-        #If there are at least 4 lines per single cycle of the grating, smoothen the transition with a sine
-        grsin = (np.sin(2*np.pi*1/grwl*np.arange(0, grwl, grwl/gr.shape[1]))+1)/2 
-        gr *= grsin  
+    grsin = (np.sin(2*np.pi*1/grwl*np.arange(0, 5*grwl))+1)/2 #create a 5-cycle long grating
+    """
+    Repeat the 5 cycle long grating to fill the complete azimuth. I chose this apprach as else the grating widths 
+    were changing too radical in the later cycles.
+    """
+    grating = np.tile(np.round(grsin), np.ceil(imgsize[1] / grsin.shape[0]).astype(int)*rsl) 
+    img = np.tile(grating[:360*rsl], imgsize[0]*rsl).reshape(np.array(imgsize)*rsl)
     
-    else:
-        #If single cycle is 2 or 3 lines, create a coarse grating
-        #Issue in case of 3 lines per period: the transition between cycles is too sharp
-        bandarray = np.linspace(0,1,np.round(grwl).astype(int))
-        gr *= bandarray
-        
-    #create the image grating
-    img = np.tile(gr, np.int(img.shape[1]/gr.shape[1]))
-    return img, gr
+    return img
 
 
 def crop_gabor_filter(rsl, sigma, sf, flts):
@@ -496,7 +486,9 @@ def crop_gabor_filter(rsl, sigma, sf, flts):
     maxsf = rsl / 2 #maximum spatial frequency achievable with the resolution, 1/°
     if sf > maxsf:    
         raise(ValueError('Image spatial frequency is too big to be adequately resolved. Maximum possible value is %.1f' %(maxsf)))
-
+    
+    #set the gabor phase so that the filter starts at the sin(0) value
+    
     gkernparams = {'gwl': rsl/sf,
                    'theta': np.deg2rad(0),
                    'sigma_x' : sigma,
@@ -513,24 +505,42 @@ def crop_gabor_filter(rsl, sigma, sf, flts):
     flte = [np.round(fltc-flts/2).astype(int),np.round(fltc+flts/2).astype(int)] #extent of the filter. indices to be 
                                                                                 #taken from kerngab to generate the 
                                                                                 #filter
+    
     newgabi = kerngab.imag.copy()[flte[0]:flte[1], flte[0]:flte[1]] #imaginary part of the filter cropped rectangular
     xlocs, ylocs = np.meshgrid(np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]),
                            np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]))
-
     circlearrayi = xlocs**2 + ylocs**2 <= (newgabi.shape[0]/2+1)**2
-    newgabi *= circlearrayi
-    newgabi -= np.min(newgabi)
-    newgabi /= np.max(newgabi)
+    newgabi = circle_crop(circlearrayi, newgabi)
+    
     
     newgabr = kerngab.real.copy()[flte[0]:flte[1], flte[0]:flte[1]] #real part of the filter cropped rectangular
     xlocs, ylocs = np.meshgrid(np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]),
                            np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]))
     circlearrayr = xlocs**2 + ylocs**2 <= (newgabr.shape[0]/2)**2
-    newgabr *= circlearrayr
-    newgabr -= np.min(newgabr)
-    newgabr /= np.max(newgabr)
-    
+    newgabr = circle_crop(circlearrayr, newgabr)
     return newgabr, newgabi
+
+
+def circle_crop(circlearray, gaborarray):
+    """
+    Circular crop function to be used in crop_gabor_filter for better readability. Filter is normalized to have
+    a min value of 0 and max value of 1
+    
+    Parameters
+    ----------
+    circlearray: 2-D array
+        The circular mask array.
+    gaborarray: 2-D array
+        The imaginary or the real part of the Gabor array.
+    
+    Returns
+    --------
+    croppedarray: 2-D array
+        The circularly cropped Gabor array.
+    """
+    croppedarray = gaborarray * circlearray
+    croppedarray /= np.max(croppedarray)
+    return croppedarray
 
 
 def filters_activity(img, fltarray):
