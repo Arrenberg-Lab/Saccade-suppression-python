@@ -559,7 +559,8 @@ def filters_activity(img, flt):
     Returns
     -------
     fltact: 2-D array
-        The activity of the filter summed over all pixels of each image patch.
+        The activity of the filter summed over all pixels of each image patch. The array contains each patch activity
+        starting from top left then iterating over each row horizontally. 
     xext: 2-D array
         The start and stop index of the image patches along x direction.
     yext: 2-D array
@@ -576,8 +577,8 @@ def filters_activity(img, flt):
     for i in range(imgxdiv):
         for j in range(imgydiv):
             patch = img[fltsize*j:fltsize*(j+1), fltsize*i:fltsize*(i+1)]
-            xext[imgydiv*i+j, :] = [fltsize*j, fltsize*(j+1)]
-            yext[imgydiv*i+j, :] = [fltsize*i, fltsize*(i+1)]
+            yext[imgydiv*i+j, :] = [fltsize*j, fltsize*(j+1)]
+            xext[imgydiv*i+j, :] = [fltsize*i, fltsize*(i+1)]
             fltact[imgydiv*i+j] = np.sum(patch*flt) #the filter activity summed over each pixel.
             #print(imgydiv*i+j, i ,j) #this to debug, imgydiv*... ensures the flattening of the index
     return fltact, xext.astype(int), yext.astype(int)       
