@@ -460,7 +460,7 @@ def generate_grating(rsl, imgsf):
     return img
 
 
-def crop_gabor_filter(rsl, sigma, sf, flts, ph):
+def crop_gabor_filter(rsl, sigma, sf, flts, ph, circlecrop = True):
     """
     Crop a Gabor filter with a given size and spatial frequency
     
@@ -474,10 +474,12 @@ def crop_gabor_filter(rsl, sigma, sf, flts, ph):
     sf: float
         The spatial frequency of the filter in degrees
     flts: float
-        The size of the filter in degrees
+        The size of the filter in degrees (i.e. diameter)
     ph: float
         The phase of the filter in degrees
-    
+    circlecrop: boolean
+        If true, circle crop is returned, else the filter is returned in a quadratic array
+        
     Returns
     --------
     newgabr: 2-D array
@@ -511,13 +513,18 @@ def crop_gabor_filter(rsl, sigma, sf, flts, ph):
     newgabi = kerngab.imag.copy()[flte[0]:flte[1], flte[0]:flte[1]] #imaginary part of the filter cropped rectangular
     xlocs, ylocs = np.meshgrid(np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]),
                            np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]))
-    circlearrayi = xlocs**2 + ylocs**2 <= (newgabi.shape[0]/2+1)**2
-    newgabi = circle_crop(circlearrayi, newgabi)
-    
     
     newgabr = kerngab.real.copy()[flte[0]:flte[1], flte[0]:flte[1]] #real part of the filter cropped rectangular
     xlocs, ylocs = np.meshgrid(np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]),
                            np.linspace(-newgabi.shape[0]/2, newgabi.shape[0]/2, newgabi.shape[0]))
+
+    if circlecrop == False:
+        return newgabr, newgabi
+    
+    circlearrayi = xlocs**2 + ylocs**2 <= (newgabi.shape[0]/2+1)**2
+    newgabi = circle_crop(circlearrayi, newgabi)
+    
+    
     circlearrayr = xlocs**2 + ylocs**2 <= (newgabr.shape[0]/2)**2
     newgabr = circle_crop(circlearrayr, newgabr)
     return newgabr, newgabi
@@ -629,3 +636,65 @@ def population_activity(gfsf, gfph, gfsz, gfilters, img):
         pext[i,0] = xext #the x indices of the patches
         pext[i,1] = yext #the y indices of the patches
     return gacts, pext
+
+
+def circle_stimulus(rdot, rsl, dxcent=None, dycent=None):
+    """
+    Create an visual field array where a circle stimulus with radius rdot is drawn somewhere randomly.
+    
+    Parameters
+    -----------
+    rdot: float
+        The radius of the circle
+    rsl: float
+        The image resolution (pixel per degrees)
+    
+    Returns
+    --------
+    img: 2-D array
+        The image containing the circle.
+    circcent: 1-D array
+        The x and y locations of the circle center
+    """
+    img = np.zeros([180,360]*rsl)
+    xvals, yvals = np.meshgrid(np.linspace(-rdot, rdot, 2*rdot), np.linspace(-rdot, rdot, 2*rdot))
+    dot = xvals**2 + yvals**2 <= rdot**2
+
+
+    if dxcent == None or dycent == None:
+        #choose random location center for the dot in the visual image if no center is specified.
+        dxcent = np.random.randint(rdot*rsl, (360-rdot)/rsl)
+        dycent = np.random.randint(rdot*rsl, (180-rdot)/rsl)
+    
+    img[np.int(dycent-rdot):np.int(dycent+rdot), np.int(dxcent-rdot):np.int(dxcent+rdot)] = dot
+    return img, np.array([dxcent, dycent])
+
+def florian_model_population_activity(filtersarray, fltcenters, img):
+    """
+    Read out the population activity by using Florian model (random RF location, get filter activity and estimate
+    stimulus location)
+    
+    Parameters
+    ----------
+    filtersarray: 3-D array
+        The array containing the Gabor filters, First dimension is for different filters, last 2 dimensions are
+        azimuth and elevation
+    fltcenters: 2-D array
+        The array containing the filter center locations. First dimension is for filters, second for x and y values
+        of the center
+    img: 2-D array
+        The image array
+        
+    Returns
+    -------
+    popact: 1-D array
+        The filter population activity
+    stimcenters: 1-D array
+        The estimated center of stimulus from population activity (x and y locations)
+    """
+    popact = np.zeros(filtersarray.shape[0])
+    for idx, filt in enumerate(filtersarray):
+        filtact = np.abs(np.sum(filt*img))
+        popact[idx] = filtact
+    stimcenter = popact/np.sum(popact) @ fltcenters
+    return popact, stimcenter

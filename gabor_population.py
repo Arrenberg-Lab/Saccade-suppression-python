@@ -8,7 +8,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import zf_helper_funcs as hlp
 from zf_helper_funcs import rt
-from itertools import combinations_with_replacement
 
 #Gabor population to decode the spatial frequency, location
 
@@ -99,6 +98,8 @@ fig, axs = plt.subplots(2,4)
 axs = axs.reshape([1,8])
 for idx, ax in enumerate(np.squeeze(axs)):
     ax.imshow(gfilters[0,0][:,:,idx])
+    ax.set_xticks([])
+    ax.set_yticks([])
 
 #see if the code works properly
 gacts, pext = hlp.population_activity(gfsf, gfph, gfsz, gfilters, img)
@@ -110,6 +111,8 @@ eximg = np.zeros(img.shape)
 eximg[0:20, 0:20] = patch
 eximg[30:50, 30:50] = patch
 eximg[55:65, 40:50] = patch[0:10, 0:10]
+eximg[100:110, 42:52] = patch[0:10, 0:10]
+
 
 
 gacts, pext = hlp.population_activity(gfsf, gfph, gfsz, gfilters, eximg)
@@ -141,30 +144,78 @@ for sidx in range(gacts.shape[2]):
     fltactsperpatch[sidx] = fltactspersize
 
 #1) Location: the easiest case: find for which patches at least 1 of the filters are showing activity, use this also
-#to sort out what filters show activity. You can do this for different size filters, the outcome should match anyways
+#to sort out what filters show activity. You can do this for different size filters, the outcome should match anyways.
+#With the implementation below the size estimation is also solved.
 activepatches = []
+fltpatchactivities = [] #activity of the considered filters in the active patches, chosen by size.
 for szidx, patchszacts in enumerate(fltactsperpatch):
     sizepatches = []
+    sizepatchactivity = []
     for pidx, patch in enumerate(patchszacts):
         if np.any(patch != 0) == True: #if this statement true at least 1 filter in the patch of the given size shows
                                       #some activity (reduction or increase from baseline) so note the location
             (xloc, yloc) = (pext[szidx,0][pidx], pext[szidx,1][pidx])
-            sizepatches.append([xloc, yloc]) 
+            sizepatches.append([xloc, yloc])
+            sizepatchactivity.append(patch)
+    fltpatchactivities.append(np.array(sizepatchactivity))
     activepatches.append(np.array(sizepatches))
 
+fltpatchactivities = np.array(fltpatchactivities)
 activepatches = np.array(activepatches)
 #Activepatches: first dimension size, second dimension number of patches evoking activity, third dimension if x or y, 
 #last dimension start and stop points along x or y.
 
 #In order to determine the location of the patches, start by the biggest filter set, create a logical array where 
 #within the whole visual field each patch with an activity has 1 or otherwise 0.
+#At the same time in this iteration, you can also determine the spatial frequency and phase
 loclogarr = np.ones(eximg.shape) #location logical array within the entire visual field
-for sizepatches in np.flip(activepatches): #iterate over the filter sets sorted by size in descending order.
+sfphmaps = np.zeros([*activepatches.shape, *eximg.shape]) #the map for decoded spatial frequency and phase for the 
+                                                          #given gabor filter set sorted by size in descending order.
+actmaps = np.zeros([*activepatches.shape, *eximg.shape]) #the activity map for decoded spatial frequency and phase 
+                                                         #for the given gabor filter set sorted by size in descending
+                                                         #order.
+sfphszarr = [] #the spatial frequency, phase and size outcomes sublist for all filters. First sublist is size sorted,
+               #within each sublist the nested sublists are for active patches containing the spatial frequency, phase
+               #, size, maximum activity and patch location parameters n the given order. Size sorting in descending 
+               #order
+for sidx, sizepatches in enumerate(np.flip(activepatches)): #iterate over the filter sets sorted by size in descending
+                                                            #order.    
     loclogszarr = np.zeros(eximg.shape) #generate the whole visual field logical array for each filter sorted 
-                                        #by size
-    for activepatch in sizepatches: #iterate over each active patch within the same size filter set.
+                                        #by size    
+    sfphmap = np.zeros(eximg.shape) #the map for each filter set sorted by size for the spatial frequency and phase
+    actmap = np.zeros(eximg.shape) #the map for each filter set sorted by size for the maximum activity
+    sfphszarrps = [] #the spatial frequency, phase and size outcomes sublist for each filter set (size sorted)                                                     
+    for pidx, activepatch in enumerate(sizepatches): #iterate over each active patch within the same size filter set.
+        popact = np.flip(fltpatchactivities)[sidx][pidx] #the population activity for the given size and given patch.
+        maxactidx = np.squeeze(np.where(popact == np.max(popact))) #this returns the indices of the unit showing max
+                                                                   #activity to be used for spatial frequency decoding 
+        sf = gfsf[maxactidx[0]] #the decoded spatial frequency for the given patch with winner takes all
+        ph = gfph[maxactidx[1]] #the decoded phase for the given patch winner takes all        
+        sz = np.flip(gfsz)[sidx]
+        _ , decodedgabor = hlp.crop_gabor_filter(rsl, sigma, sf, sz, ph, circlecrop=False) 
         loclogszarr[activepatch[1,0]:activepatch[1,1], activepatch[0,0]:activepatch[0,1]] = 1
+        sfphmap[activepatch[1,0]:activepatch[1,1], activepatch[0,0]:activepatch[0,1]] = decodedgabor
+        actmap[activepatch[1,0]:activepatch[1,1], activepatch[0,0]:activepatch[0,1]] = np.max(popact) / \
+                                                                                        np.product(decodedgabor.shape)
+        sfphszarrps.append(np.array([sf, ph, sz, np.max(popact), activepatch]))
     loclogarr *= loclogszarr
+    sfphmaps[sidx, : ,:] = sfphmap
+    actmaps[sidx, : ,:] = actmap
+    sfphszarr.append(np.array(sfphszarrps))
+
+sfphszarr = np.array(sfphszarr)
+
+#x and pair indices off all pixels from top left to bottom right going from left to right then from up to down.
+xyidx = [(k,j) for j in range(eximg.shape[1]) for k in range(eximg.shape[0])] 
+
+decodedimg = np.zeros(eximg.shape)
+totalactmap = np.zeros(eximg.shape)
+for idx, actmap in enumerate(actmaps):
+    for lidx in xyidx:
+        if totalactmap[lidx] < actmap[lidx]:
+            totalactmap[lidx] = actmap[lidx]
+            decodedimg[lidx] = sfphmaps[idx][lidx]
+decodedimg *= loclogarr
 
 fig, axs = plt.subplots(1,2, sharex=True, sharey=True)
 axs[0].imshow(eximg)
@@ -175,3 +226,104 @@ axs[0].invert_yaxis()
 axs[0].set_ylabel('Elevation [$^\circ$]')
 fig.text(0.475, 0.02, 'Azimuth [$^\\circ$]', size=20)
 fig.suptitle('Location decoding', size=30)
+
+fig, axs = plt.subplots(1,5, sharex=True, sharey=True)
+axs[0].imshow(eximg)
+axs[0].set_title('Real image')
+axs[4].imshow(decodedimg)
+axs[4].set_title('Model readout')
+for idx, imgmap in enumerate(sfphmaps):
+    axs[idx+1].imshow(imgmap[0:120, 0:60])
+    axs[idx+1].set_title('size=%d'%(np.flip(gfsz)[idx]))
+axs[0].invert_yaxis()
+axs[0].set_ylabel('Elevation [$^\circ$]')
+axs[2].set_xlabel('Azimuth [$^\circ$]')
+fig.text(0.45,0.85,'Filter maps',size=30)
+
+#Now do the model of Florian
+rdot = 50*rsl #the radius of the dot in pixels
+jsigma = 1 #the standard deviation of the jitter noise
+
+#create all combinations of the possible filters
+nfilters = 200 #number of filters
+parametertriplets = [(i,j,k) for i in gfsf for j in gfsz for k in gfph] #order is sf sz ph
+randomidxs = np.random.randint(0, len(parametertriplets), nfilters)
+parameters = [parametertriplets[randomidxs[i]] for i in range(len(randomidxs))]
+parameters = np.array(parameters)
+
+#tile the image then jitter the locations
+xstart = np.linspace(0, 360, 2*np.sqrt(nfilters/2).astype(int), endpoint=False)*rsl
+ystart = np.linspace(0, 180, np.sqrt(nfilters/2).astype(int), endpoint=False)*rsl
+(xloc, yloc) = np.meshgrid(xstart, ystart)
+jitterxy = np.random.normal(0, jsigma, [2, *xloc.shape])
+xloc += jitterxy[0]
+yloc += jitterxy[1]
+xloc = np.round(xloc).astype(int)
+yloc = np.round(yloc).astype(int)
+xloc[xloc<0] += 359*rsl
+yloc[yloc<0] += 179*rsl
+xloc[xloc>358*rsl] -= 359*rsl
+yloc[yloc>178*rsl] -= 179*rsl
+xloc = xloc.reshape(len(parameters))
+yloc = yloc.reshape(len(parameters))
+
+filtersarray = np.zeros([nfilters, *img.shape]) #each filter has a specific position. (xloc yloc determines the upper
+                                                #left corner of the patch). This array is hence nfilters*img.shape
+filtersimg = np.zeros(img.shape)
+for idx, params in enumerate(parameters):
+    _,flt = hlp.crop_gabor_filter(rsl, sigma, *params)
+    xext = flt.shape[1]
+    yext = flt.shape[0]
+    #crop the extra areas of the filters
+    if xext+xloc[idx] > img.shape[1]-1:
+        xext = img.shape[1]- xloc[idx]
+    if yext+yloc[idx] > img.shape[0]-1:
+        yext = img.shape[0] - yloc[idx]
+    filtersarray[idx, yloc[idx]:yloc[idx]+yext, xloc[idx]:xloc[idx]+xext] = flt[:yext, :xext]
+    filtersimg[yloc[idx]:yloc[idx]+yext, xloc[idx]:xloc[idx]+xext][flt[:yext, :xext]!=0] = \
+                                                                            flt[:yext, :xext][flt[:yext, :xext]!=0]
+fltcenters = np.array([xloc + parameters[:,1], yloc + parameters[:,1]]).T
+
+fig, ax = plt.subplots(1,1)
+ax.imshow(filtersimg)    
+ax.set_ylabel('Elevation [$^\circ$]')
+ax.set_xlabel('Azimuth [$^\circ$]')
+ax.invert_yaxis()
+ax.set_title('Receptive fields of the filter population')
+
+#population activity
+centoffs = np.array([0,1,5,10,20])
+circcents = np.zeros([len(centoffs),2])
+popacts = np.zeros([len(centoffs), len(parameters)])
+stimcents = np.zeros(circcents.shape)
+imgs = np.zeros([len(centoffs),*(180,360)*rsl])
+for idx, centoff in enumerate(centoffs):
+    img, circcent = hlp.circle_stimulus(rdot, rsl, *(100, 100)+centoff) #works like magic :)
+    circcents[idx, :] = circcent
+    popact, stimcent = hlp.florian_model_population_activity(filtersarray, fltcenters, img)
+    popacts[idx,:] = popact
+    stimcents[idx,:] = stimcent
+    imgs[idx,:,:] = img
+
+fig, axs = plt.subplots(3,2)
+for idx, ax in enumerate(np.squeeze(axs.reshape(1,6))):
+    if idx == 5:
+        break
+    ax.imshow(imgs[idx,:,:])
+    ax.scatter(*circcents[idx], label='Real')
+    ax.scatter(*stimcents[idx], label='Decoded')
+    ax.set_title('Shift %.2f pixels' %(np.sqrt(2)*centoffs[idx]))
+    ax.invert_yaxis()
+axs[1,1].legend(loc='best')
+stimcircdiff = np.sqrt(np.diff(circcents[:,0])**2 + np.diff(circcents[:,1])**2)
+deccircdiff = np.sqrt(np.diff(stimcents[:,0])**2 + np.diff(stimcents[:,1])**2)
+axs[2,1].plot(stimcircdiff,deccircdiff, 'r.')  
+axs[2,1].plot(stimcircdiff,stimcircdiff, 'k-')  
+axs[0,0].set_xticks([])
+axs[0,1].set_xticks([])
+axs[1,0].set_xticks([])
+axs[2,1].set_xlabel('Real shift')
+axs[2,1].set_ylabel('Decoded shift')
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.98, top=0.94, wspace=0.04, hspace=0.26)
+axs[1,0].set_ylabel('Elevation [$^\circ$]')
+axs[2,0].set_xlabel('Azimuth [$^\circ$]')
