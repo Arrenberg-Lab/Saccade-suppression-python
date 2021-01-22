@@ -669,6 +669,134 @@ def circle_stimulus(rdot, rsl, dxcent=None, dycent=None):
     img[np.int(dycent-rdot):np.int(dycent+rdot), np.int(dxcent-rdot):np.int(dxcent+rdot)] = dot
     return img, np.array([dxcent, dycent])
 
+
+def florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, img):
+    """
+    The function to get the random shuffled parameter combinations from a given parameter pool
+    
+    Parameters
+    ----------
+    nfilters: integer
+        Number of filters used in the model
+    rsl: float
+        The resolution of the stimulus image
+    gfsf: 1-D array
+        The array containing the possible filter spatial frequency values
+    gfsz: 1-D array
+        The array containing the possible filter size values
+    gfph: 1-D array
+        The array containing the possible filter phas values
+    jsigma: float
+        The standard deviation of the filter center location randomizer
+    img: float
+        The stimulus image
+    Returns
+    -------
+    parameters: 2-D array
+        The array containing the parameter values (2nd dimension in the order of spatial frequency, size and phase)
+        for each filter
+    fltcenters: 2-D array
+        The array containing the x and y coordinates of the Gabor filter centers.
+    """
+    parametertriplets = [(i,j,k) for i in gfsf for j in gfsz for k in gfph] #order is sf sz ph
+    randomidxs = np.random.randint(0, len(parametertriplets), nfilters)
+    parameters = [parametertriplets[randomidxs[i]] for i in range(len(randomidxs))]
+    parameters = np.array(parameters)
+    
+    #tile the image then jitter the locations
+    #take the center of each patch (x y pixel values)
+    xcenters = np.linspace(0, 360, 2*np.sqrt(nfilters/2).astype(int), endpoint=False) + np.sqrt(nfilters/2).astype(int)
+    ycenters = np.linspace(0, 180, np.sqrt(nfilters/2).astype(int), endpoint=False) + np.sqrt(nfilters/2).astype(int)
+    xcenters *= rsl #convert to pixels
+    ycenters *= rsl
+    
+    (xloc, yloc) = np.meshgrid(xcenters, ycenters)
+    jitterxy = np.random.normal(0, jsigma, [2, *xloc.shape]) * rsl #jitter in pixels
+    xloc += jitterxy[0]
+    yloc += jitterxy[1]
+    xloc = np.round(xloc).astype(int)
+    yloc = np.round(yloc).astype(int)
+    xloc = xloc % img.shape[1] #for center values bigger than 360° in azimuth, wrap the index around and get the
+                               #correxponding smaller angle value location (i.e. 363° is the same as 3°)
+    #for elevation set the center values outside of the image borders to the image border
+    yloc[yloc<0] = 0
+    yloc[yloc>img.shape[0]-1] = img.shape[0]-1                            
+    xloc = xloc.reshape(len(parameters)) #make it a list so circular modulo operator works.
+    yloc = yloc.reshape(len(parameters))
+    fltcenters = np.array([xloc, yloc]).T
+    return parameters, fltcenters
+
+
+def florian_model_filter_population(nfilters, img, rsl, sigma, parameters, xloc, yloc):
+    """
+    Generate a population of filters with the given settings
+    
+    Parameters
+    ----------
+    nfilters: integer
+        Number of filters used in the population
+    img: 2-D array
+        The stimulus image
+    rsl: float
+        The resolution of the stimulus image
+    sigma: float
+        The standard deviation used for the Gabor filters
+    parameters: 2-D array
+        The array containing the parameters. 2nd dimension is for spatial frequency, size and phase values in the 
+        respective order
+    xloc: 1-D array
+        The array containing the x coordinates of the filter centers
+    yloc: 1-D array
+        The array containing the y coordinates of the filter centers
+    
+    Returns
+    --------
+    filtersarray: 3-D array
+        The array containing the filter receptive fields. First dimension is for filter number, second for elevation
+        and last for azimuth
+    filtersimg: 2-D array
+        The array containing all the filters at once within the visual field. The Gabor filters show overlap.    
+    """
+    filtersarray = np.zeros([nfilters, *img.shape]) #each filter has a specific position. (xloc yloc determines the 
+                                                    #center). This array is hence nfilters*img.shape
+    filtersimg = np.zeros(img.shape)
+    for idx, params in enumerate(parameters):
+        _, flt = crop_gabor_filter(rsl, sigma, *params)
+        fltext = np.floor(flt.shape[1] / 2) #radius of the filter
+        ypixs = img.shape[0] #pixel numbers along elevation
+        xpixs = img.shape[1] #pixel numbers along azimuth
+        
+        #ensure the start y value for the filter in the image is bigger or equal to zero
+        ystartcorr = np.int(np.abs(np.min([0, yloc[idx]-fltext]))) #correction factor, zero if yloc[idx]-fltext)>=0 
+        #ensure the stop y value for the filter in the image is bigger than 180*rsl
+        ystopcorr = ypixs - np.max([ypixs, yloc[idx]+fltext]) #correction factor, zero if yloc[idx]+fltext)<180    
+        
+        #x and y start and stop indices
+        ystart = np.int(yloc[idx]-fltext+ystartcorr)
+        ystop = np.int(yloc[idx]+fltext+ystopcorr)
+        xstart = np.int((xloc[idx]-fltext)%xpixs)
+        xstop = np.int((xloc[idx]+fltext)%xpixs)
+        
+        if xstop > xstart:
+            filtersarray[idx, ystart:ystop, xstart:xstop] = flt[ystartcorr:ystop-ystart+ystartcorr, :]
+            filtersimg[ystart:ystop, xstart:xstop][flt[ystartcorr:ystop-ystart+ystartcorr, :]!=0] = \
+                             flt[ystartcorr:ystop-ystart+ystartcorr, :][flt[ystartcorr:ystop-ystart+ystartcorr, :]!=0]
+        else: #if the filter is wrapping around in azimuth, we need to index first until the end of the image, then 
+              #index the remainder to the beginning.
+            #index until which the first part of the filter is to be taken. (part until the end of the image).
+            fltidx = np.int(xpixs-xstart) 
+            #index until the end of the azimuth
+            filtersarray[idx, ystart:ystop, xstart:] = flt[ystartcorr:ystop-ystart+ystartcorr, :fltidx]
+            filtersimg[ystart:ystop, xstart:][flt[ystartcorr:ystop-ystart+ystartcorr, :fltidx]!=0] = \
+                  flt[ystartcorr:ystop-ystart+ystartcorr, :fltidx][flt[ystartcorr:ystop-ystart+ystartcorr, :fltidx]!=0]
+            #index from zero until the remainder
+            filtersarray[idx, ystart:ystop, :xstop] = flt[ystartcorr:ystop-ystart+ystartcorr, fltidx:]
+            filtersimg[ystart:ystop, :xstop][flt[ystartcorr:ystop-ystart+ystartcorr, fltidx:]!=0] = \
+                  flt[ystartcorr:ystop-ystart+ystartcorr, fltidx:][flt[ystartcorr:ystop-ystart+ystartcorr, fltidx:]!=0]
+                  
+    return filtersarray, filtersimg
+    
+
 def florian_model_population_activity(filtersarray, fltcenters, img):
     """
     Read out the population activity by using Florian model (random RF location, get filter activity and estimate
