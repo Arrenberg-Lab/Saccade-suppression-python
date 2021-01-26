@@ -169,16 +169,16 @@ activepatches = np.array(activepatches)
 #within the whole visual field each patch with an activity has 1 or otherwise 0.
 #At the same time in this iteration, you can also determine the spatial frequency and phase
 loclogarr = np.ones(eximg.shape) #location logical array within the entire visual field
-sfphmaps = np.zeros([*activepatches.shape, *eximg.shape]) #the map for decoded spatial frequency and phase for the 
+sfphmaps = np.zeros([len(activepatches), *eximg.shape]) #the map for decoded spatial frequency and phase for the 
                                                           #given gabor filter set sorted by size in descending order.
-actmaps = np.zeros([*activepatches.shape, *eximg.shape]) #the activity map for decoded spatial frequency and phase 
+actmaps = np.zeros([len(activepatches), *eximg.shape]) #the activity map for decoded spatial frequency and phase 
                                                          #for the given gabor filter set sorted by size in descending
                                                          #order.
 sfphszarr = [] #the spatial frequency, phase and size outcomes sublist for all filters. First sublist is size sorted,
                #within each sublist the nested sublists are for active patches containing the spatial frequency, phase
                #, size, maximum activity and patch location parameters n the given order. Size sorting in descending 
                #order
-for sidx, sizepatches in enumerate(np.flip(activepatches)): #iterate over the filter sets sorted by size in descending
+for sidx, sizepatches in enumerate(np.flip(activepatches,0)): #iterate over the filter sets sorted by size in descending
                                                             #order.    
     loclogszarr = np.zeros(eximg.shape) #generate the whole visual field logical array for each filter sorted 
                                         #by size    

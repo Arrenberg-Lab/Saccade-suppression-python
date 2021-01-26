@@ -12,6 +12,10 @@ import zf_helper_funcs as hlp
 #initial image values
 rsl = 1 #resolution as pixel per degrees, use to transform the degrees to pixels as this is the no of pixels 
         #corresponding to 1 degree.
+rdot = 10*rsl #the radius of the dot in pixels
+jsigma = 4 #the standard deviation of the jitter noise in degrees
+#the image with the dot.
+img, circcent = hlp.circle_stimulus(rdot, rsl, *(100, 100)) #works like magic :)
 
 #filter parameters
 gfsz = np.round(np.logspace(np.log10(20), np.log10(60), 3) * rsl) #3 sizes sampled logarithmically between 10-100°
@@ -19,16 +23,6 @@ gfsz = np.ceil(gfsz / 2)*2 #ensure the filter sizes are even so defining the rad
 gfsf = [0.1, 0.15, 0.2, 0.25] #the filter spatial frequencies in degrees
 gfph = np.arange(0,360, 45) #the filter phases in degrees
 sigma = 100*rsl #the standard deviation of the initial gabor filter
-
-#Now do the model of Florian
-rdot = 10*rsl #the radius of the dot in pixels
-jsigma = 4 #the standard deviation of the jitter noise in degrees
-
-#the image with the dot.
-img, circcent = hlp.circle_stimulus(rdot, rsl, *(100, 100)) #works like magic :)
-
-
-#create all combinations of the possible filters
 nfilters = 200 #number of filters
 
 parameters, fltcenters = hlp.florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, img)
