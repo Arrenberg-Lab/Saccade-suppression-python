@@ -107,9 +107,46 @@ ddict = {'XY shift': np.tile(centoffs, nsimul*len(nfilters)),
          'Stimulus center X': np.tile(ccents[:,0], nsimul*len(nfilters)),
          'Stimulus center Y': np.tile(ccents[:,1], nsimul*len(nfilters)), 
          'Decoded center X': scents[:,:,:,0].flatten(), 
-         'Decoded center Y': scents[:,:,:,0].flatten(),
+         'Decoded center Y': scents[:,:,:,1].flatten(),
          'Number of filters': np.tile(np.repeat(nfilters,len(centoffs)), nsimul)}
 simuldf = pd.DataFrame.from_dict(ddict)
 filename = r'\nsimul=%s_rsl=%s_rdot=%s_jsigma=%s_centoffs=%s_gfsz=%s_gfsf=%s_gfph=%s_nfilters=%s' \
            %(nsimul, rsl, rdot, jsigma, centoffs, gfsz, gfsf, gfph, nfilters)
+simuldf.to_csv(savepath+filename)
+
+#Run the last simulation where image center also varies between +-avg(filterdistance)/2, this corresponds to randomly
+#shifting the receptive fields in the direction opposite to the image shift. Do this for one image in the center 
+#(i.e. image center is at 180,90 azimuth&elevation) and shift the image center randomly at each iteration.
+ccents = np.zeros([nsimul, len(nfilters), 2]) #preallocated array for the circle centers, first dimension is
+                                              #simulation idx, second dimension the number of filters in the
+                                              #population and last dimension is x and y coordinates.
+
+scents = np.zeros([nsimul, len(nfilters), 2]) #preallocated array for the decoded centers, first dimension is
+                                              #simulation idx, second dimension the number of filters in the
+                                              #population and last dimension is x and y coordinates.
+for n in range(nsimul): 
+    print('Current simulation number: %i' %(n+1))
+    for nidx, nfilter in enumerate(nfilters):
+        #generate random gabor population in each simulation
+        parameters, fltcenters = hlp.florian_model_shuffle_parameters(nfilter, rsl, gfsf, gfsz, gfph, jsigma, img)
+        filtersarray, _ = hlp.florian_model_filter_population(nfilter, img, rsl, sigma, parameters, fltcenters[:,0]
+                                                                                                    ,fltcenters[:,1])
+        print('nfilter is %d' %(nfilter))
+        #generate the image, center offset sampled randomly from discrete uniform distribution for each iteration.
+        fltdist = 90*rsl /np.sqrt(nfilter/2) #in pixels
+        print('fltdist is %.2f' %(fltdist))
+        off = np.random.randint(np.round(-fltdist/2), np.round(fltdist/2), 2) #1st value y jitter 2nd x of the img
+        img, circcent = hlp.circle_stimulus(rdot, rsl, *(180, 90)+off)
+        _, stimcent = hlp.florian_model_population_activity(filtersarray, fltcenters, img)
+        scents[n, nidx, :] = stimcent
+        ccents[n, nidx, :] = circcent
+
+ddict = {'Stimulus center X': np.squeeze(ccents[:,:,0].flatten()),
+         'Stimulus center Y': np.squeeze(ccents[:,:,1].flatten()), 
+         'Decoded center X': np.squeeze(scents[:,:,0].flatten()), 
+         'Decoded center Y': np.squeeze(scents[:,:,1].flatten()),
+         'Number of filters': np.squeeze(np.tile(nfilters, nsimul))}
+simuldf = pd.DataFrame.from_dict(ddict)
+filename = r'\nsimul=%s_rsl=%s_rdot=%s_jsigma=%s_gfsz=%s_gfsf=%s_gfph=%s_nfilters=%s_nimg=1' \
+           %(nsimul, rsl, rdot, jsigma, gfsz, gfsf, gfph, nfilters)
 simuldf.to_csv(savepath+filename)

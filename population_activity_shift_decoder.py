@@ -23,52 +23,101 @@ gfsz = np.ceil(gfsz / 2)*2 #ensure the filter sizes are even so defining the rad
 gfsf = [0.1, 0.15, 0.2, 0.25] #the filter spatial frequencies in degrees
 gfph = np.arange(0,360, 45) #the filter phases in degrees
 sigma = 100*rsl #the standard deviation of the initial gabor filter
-nfilters = 200 #number of filters
+ntiling = 10 #number of patches of the visual space along elevation.
+nfilters = 2*ntiling**2 #number of filters
 
 parameters, fltcenters = hlp.florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, img)
 filtersarray, filtersimg = hlp.florian_model_filter_population(nfilters, img, rsl, sigma, parameters, fltcenters[:,0],
                                                                                                       fltcenters[:,1])
 
 fig, ax = plt.subplots(1,1)
-ax.imshow(filtersimg, vmin=-1, vmax=1)    
+ax.imshow(filtersimg, vmin=-1, vmax=1, extent=(-180,180,90,-90))    
 ax.set_ylabel('Elevation [$^\circ$]')
 ax.set_xlabel('Azimuth [$^\circ$]')
 ax.invert_yaxis()
+ax.set_yticks(np.linspace(-90, 90, 5))
+ax.set_xticks(np.linspace(-180, 180, 9))
 ax.set_title('Receptive fields of the filter population')
 
 #population activity
-centoffs = np.array([0,1,5,10,20])
+centoffs = np.array([0,1,5,15,30,50,20])
 circcents = np.zeros([len(centoffs),2]) #real center
 popacts = np.zeros([len(centoffs), len(parameters)])
 stimcents = np.zeros(circcents.shape) #decoded center
 imgs = np.zeros([len(centoffs),*(180,360)*rsl])
 for idx, centoff in enumerate(centoffs):
-    img, circcent = hlp.circle_stimulus(rdot, rsl, *(100, 100)+centoff) #works like magic :)
+    img, circcent = hlp.circle_stimulus(rdot, rsl, *(180, 90)+centoff) #works like magic :)
     circcents[idx, :] = circcent
     popact, stimcent = hlp.florian_model_population_activity(filtersarray, fltcenters, img)
     popacts[idx,:] = popact
     stimcents[idx,:] = stimcent
     imgs[idx,:,:] = img
 
-fig, axs = plt.subplots(3,2)
-for idx, ax in enumerate(np.squeeze(axs.reshape(1,6))):
-    if idx == 5:
-        break
-    ax.imshow(imgs[idx,:,:])
-    ax.scatter(*circcents[idx], label='Real', s=2)
-    ax.scatter(*stimcents[idx], label='Decoded', s=2)
-    ax.set_title('Shift %.2f pixels' %(np.sqrt(2)*centoffs[idx]))
-    ax.invert_yaxis()
-axs[1,1].legend(loc='best')
+fig, axs = plt.subplots(3,3)
+gs = axs[1,2].get_gridspec() #big subplot for the scatterplot
+for ax in np.squeeze(axs[1:, :-1].reshape(1,4)):
+    ax.remove()
+axbig = fig.add_subplot(gs[1:, :-1])
+axs = np.squeeze(axs.reshape(1,9))
+
+iidx = 0
+for idx in [0,1,2,5,8]:
+    if iidx == 1:
+        iidx += 1
+    axs[idx].imshow(imgs[iidx,:,:], extent=(-180,180,90,-90))
+    axs[idx].scatter(*circcents[iidx]-(180,90), label='Real', s=2)
+    axs[idx].scatter(*stimcents[iidx]-(180,90), label='Decoded', s=10)
+    axs[idx].set_title('Shift %.2f pixels' %(np.sqrt(2)*centoffs[iidx]))
+    axs[idx].invert_yaxis()
+    axs[idx].set_yticks(np.linspace(-90, 90, 5))
+    axs[idx].set_xticks(np.linspace(-180, 180, 5))
+    iidx += 1 #show the bigger shifts.
+
+for ax in axs[[1,2]]:
+    ax.set_yticklabels('')
+for ax in axs[[2,5]]:
+    ax.set_xticklabels('')    
+
+axs[idx].legend(loc='best')
+axs[0].set_ylabel('Elevation [$^\circ$]')
+axs[-1].set_xlabel('Azimuth [$^\circ$]')
+plt.subplots_adjust(hspace=0.533)
+
 stimcircdiff = np.sqrt(np.diff(circcents[:,0])**2 + np.diff(circcents[:,1])**2)
 deccircdiff = np.sqrt(np.diff(stimcents[:,0])**2 + np.diff(stimcents[:,1])**2)
-axs[2,1].plot(stimcircdiff,deccircdiff, 'r.')  
-axs[2,1].plot(stimcircdiff,stimcircdiff, 'k-')  
-axs[0,0].set_xticks([])
-axs[0,1].set_xticks([])
-axs[1,0].set_xticks([])
-axs[2,1].set_xlabel('Real shift')
-axs[2,1].set_ylabel('Decoded shift')
-plt.subplots_adjust(left=0.07, bottom=0.09, right=0.98, top=0.94, wspace=0.04, hspace=0.26)
-axs[1,0].set_ylabel('Elevation [$^\circ$]')
-axs[2,0].set_xlabel('Azimuth [$^\circ$]')
+axbig.plot(stimcircdiff,deccircdiff, 'r.')  
+
+maxdeccircdiff = np.max(deccircdiff)
+mindeccircdiff = np.min(deccircdiff)
+for n in range(10):
+    print(n)
+    stimcents = np.zeros(circcents.shape) #decoded center
+    parameters, fltcenters = hlp.florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, img)
+    filtersarray, filtersimg = hlp.florian_model_filter_population(nfilters, img, rsl, sigma, parameters, 
+                                                                   fltcenters[:,0], fltcenters[:,1])
+    
+    for idx, centoff in enumerate(centoffs):
+        img, circcent = hlp.circle_stimulus(rdot, rsl, *(100, 100)+centoff) #works like magic :)
+        circcents[idx, :] = circcent
+        popact, stimcent = hlp.florian_model_population_activity(filtersarray, fltcenters, img)
+        popacts[idx,:] = popact
+        stimcents[idx,:] = stimcent
+        imgs[idx,:,:] = img
+    stimcircdiff = np.sqrt(np.diff(circcents[:,0])**2 + np.diff(circcents[:,1])**2)
+    deccircdiff = np.sqrt(np.diff(stimcents[:,0])**2 + np.diff(stimcents[:,1])**2)
+    if maxdeccircdiff < np.max(deccircdiff):
+        maxdeccircdiff = np.max(deccircdiff)
+    if mindeccircdiff > np.min(deccircdiff):
+        mindeccircdiff = np.min(deccircdiff)
+    axbig.plot(stimcircdiff,deccircdiff, 'r.')  
+    
+#axbig.plot([mindeccircdiff, maxdeccircdiff+5],[mindeccircdiff, maxdeccircdiff+5], 'k-')  
+axbig.set_xlabel('Real shift [$^\circ$]')
+axbig.set_ylabel('Decoded shift [$^\circ$]')
+axbig.set_yticks(np.arange(0, np.ceil(maxdeccircdiff),10))
+axbig.set_xticks(np.arange(0, np.ceil(maxdeccircdiff),10))
+axbig.set_ylim(0, maxdeccircdiff+2)
+axbig.set_xlim(0, maxdeccircdiff+2)
+axbig.set_aspect('equal')
+axbig.plot(axbig.get_xlim(), axbig.get_ylim(), 'k-')
+plt.subplots_adjust(left=0.129, bottom=0.09, right=0.9, top=0.933, wspace=0.0, hspace=0.464)

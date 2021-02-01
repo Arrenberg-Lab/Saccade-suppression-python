@@ -46,18 +46,18 @@ Created on Thu Dec  3 10:31:45 2020
           +When this works, explore the model parameters: generate different sets of parameters (fake species, maybe
           check out the literature for some reference point) and see what is going on.
           
-          +After the point above, check the inter-individual variability. Generate a violin plot for 100-10k
-          simulations  
+          .After the point above, check the inter-individual variability. Generate a violin plot for 100-10k
+          simulations  DONE
           
-          +Violin plot also for different neuron numbers.
+          .Violin plot also for different neuron numbers  DONE
           
           +Also try different types of stimuli => Naturalistic etc.
           
           +For later: check size-sf relationship in the Gabor filters. Look up the literature.
           
-          +Increase the shift size, decrease the stimulus size (smaller than the RFs)
+          .Increase the shift size, decrease the stimulus size (smaller than the RFs) DONE
           
-          + RF size set: 2 to 100 degrees with logarithmic sampling (do for now 10 to 100 degrees since rsl)
+          . RF size set: 2 to 100 degrees with logarithmic sampling (do for now 10 to 100 degrees since rsl) DONE
           
           +Spatial frequency values: 1) For zebrafish wait for Giulia response, 
                                      2) For macaque check the literature
@@ -67,4 +67,43 @@ Created on Thu Dec  3 10:31:45 2020
           
           +Ari's suggestion of the hybrid model: Implement a shift decoder based on phase difference.
           
+   26.01: .Violin plots: Plot 1st and 99th quartiles, stuff outside there is outliers DONE
+          
+          .Normed error is relative, the other one is absolute. DONE
+          
+          +nfilters simulation, report nans as zero shift. Discuss tomorrow since nans are about location not
+          about shifts.
+          
+          +phase shift decoder: Try to do an image reconstruction decoder, leave out the phase shift story, instead 
+          weigh each filter with their respective activity and superimpose on each other to get the decoded image for
+          a given filter population. SOMEHOW NOT REALLY WORKING
+              
+          .presentation: discuss tomorrow. rough draft until saturday morning (friday night is yours ;))
+          
+          .RERUN the simulation differing in nfilters since you dumbo saved the values wrong UGHHH DUMBO!
+          
+          +Thus generate also correct violinplots. Just go through them to save them.
+                    
+          +Run a new simulation with single image where the stimulus location also randomly jitters as much as the 
+          average distance between filters (stimulus in the center of the visual field, if distance between filters is
+          on average 60°, then the stimulus location jitters around +-30° in azimuth and elevation). Respective 
+          violinplots. Simulation in progress.
+    
+          +First try increasing the filter number in the image reconstruction model (2000 or 5000), also considering 
+          different orientations for the Gabor filter.
+    
+          +If this does not work out, try the model Ari suggested: Generate the filter population as in the shift 
+          decoder model with random RF center locations and random RF parameters, leaving out the phase parameter. 
+          Then for a given filter generate multiple copies of filters at the same location with the same parameters 
+          only differing in phase. In other words generate different filter phase maps for a given filter set.
+          Acquire the joint activity of all filter maps for a given stimulus, decode the stimulus shift also using 
+          the activity difference between filters of different phase.
+          
+          +Yet for now I am really not sure how to approach for the decoding algorithm, one idea I have now is to 
+          weight the activity of each filter in a map to get the location read-out within each map, then somehow 
+          combine readouts of all filter maps considering the phase difference. Another idea would be comparing the 
+          activity levels of filters differing only in phase. Of course I can also simply weight all the filter 
+          center locations with the respective activity level regardless of the filter maps.
+          
+          +Improve lab meeting presentation until Monday morning.
 """

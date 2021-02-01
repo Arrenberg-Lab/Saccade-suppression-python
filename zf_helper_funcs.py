@@ -645,7 +645,7 @@ def circle_stimulus(rdot, rsl, dxcent=None, dycent=None):
     Parameters
     -----------
     rdot: float
-        The radius of the circle
+        The radius of the circle in pixels
     rsl: float
         The image resolution (pixel per degrees)
     
@@ -659,7 +659,6 @@ def circle_stimulus(rdot, rsl, dxcent=None, dycent=None):
     img = np.zeros([180,360]*rsl)
     xvals, yvals = np.meshgrid(np.linspace(-rdot, rdot, 2*rdot), np.linspace(-rdot, rdot, 2*rdot))
     dot = xvals**2 + yvals**2 <= rdot**2
-
 
     if dxcent == None or dycent == None:
         #choose random location center for the dot in the visual image if no center is specified.
@@ -705,8 +704,10 @@ def florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, im
     
     #tile the image then jitter the locations
     #take the center of each patch (x y pixel values)
-    xcenters = np.linspace(0, 360, 2*np.sqrt(nfilters/2).astype(int), endpoint=False) + np.sqrt(nfilters/2).astype(int)
-    ycenters = np.linspace(0, 180, np.sqrt(nfilters/2).astype(int), endpoint=False) + np.sqrt(nfilters/2).astype(int)
+    xcenters = np.linspace(0, 360, 2*np.sqrt(nfilters/2).astype(int), endpoint=False) +\
+                                                                                  90/np.sqrt(nfilters/2).astype(int)
+    ycenters = np.linspace(0, 180, np.sqrt(nfilters/2).astype(int), endpoint=False) +\
+                                                                                  90/np.sqrt(nfilters/2).astype(int)
     xcenters *= rsl #convert to pixels
     ycenters *= rsl
     
@@ -823,6 +824,59 @@ def florian_model_population_activity(filtersarray, fltcenters, img):
     popact = np.zeros(filtersarray.shape[0])
     for idx, filt in enumerate(filtersarray):
         filtact = np.abs(np.sum(filt*img))
+        popact[idx] = filtact
+    stimcenter = popact/np.sum(popact) @ fltcenters
+    return popact, stimcenter
+
+
+def plot_outliers_to_violinplot(data, pcutoff, ax):
+    """
+    Plot the outlier datapoints to the violinplot as small black dots
+    
+    Parameters
+    ----------
+    data: 2-D array
+        The data from which the violinplot is generated
+    pcutoff: 1-D array
+        The percentile cutoffs for a data to be considered as an outlier, between 0 and 100
+    ax: axis object
+        The axis to which the outliers are to be plotted.
+        
+    Returns
+    --------
+    """
+    for didx, dat in enumerate(data):
+        percentiles = np.percentile(np.array(dat)[~np.isnan(dat)], pcutoff)
+        outliers = np.array(dat)[(dat<percentiles[0]) | (dat>percentiles[1])]
+        ax.plot(np.repeat(didx+1, len(outliers)), outliers, 'k.', markersize=1.5) 
+    return
+
+def florian_model_population_activity_img_reconstruction(filtersarray, fltcenters, img):
+    """
+    Read out the population activity by using Florian model (random RF location, get filter activity to reconstruct
+    the image)
+    
+    Parameters
+    ----------
+    filtersarray: 3-D array
+        The array containing the Gabor filters, First dimension is for different filters, last 2 dimensions are
+        azimuth and elevation
+    fltcenters: 2-D array
+        The array containing the filter center locations. First dimension is for filters, second for x and y values
+        of the center
+    img: 2-D array
+        The image array
+        
+    Returns
+    -------
+    popact: 1-D array
+        The filter population activity
+    stimcenters: 1-D array
+        The estimated center of stimulus from population activity (x and y locations)
+    """
+    popact = np.zeros(filtersarray.shape[0])
+    for idx, filt in enumerate(filtersarray):
+        filtact = np.sum(filt*img)
         popact[idx] = filtact
     stimcenter = popact/np.sum(popact) @ fltcenters
     return popact, stimcenter
