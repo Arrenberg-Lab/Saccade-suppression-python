@@ -851,6 +851,28 @@ def plot_outliers_to_violinplot(data, pcutoff, ax):
         ax.plot(np.repeat(didx+1, len(outliers)), outliers, 'k.', markersize=1.5) 
     return
 
+
+def violin_plot_xticklabels_add_nsimul(xtcks, data):
+    """
+    Format the x tick labels so that under the real label the corresponding number of simulations are shown.
+    
+    Parameters
+    ----------
+    xtcks: 1-D array
+        The initial tick labels.
+    data: 1-D or 2-D array
+        The dataset from which the violinplots are generated.
+    
+    Returns
+    -------
+    xtcks: 1-D array
+        The new x ticks array formatted to show the number of simulations in a new line.
+    """
+    for idx, label in enumerate(xtcks[1:]):
+        xtcks[idx+1] = str(label) + ' \n (%i)'%(len(data[idx]))
+    return xtcks
+    
+
 def florian_model_population_activity_img_reconstruction(filtersarray, fltcenters, img):
     """
     Read out the population activity by using Florian model (random RF location, get filter activity to reconstruct
@@ -880,3 +902,5 @@ def florian_model_population_activity_img_reconstruction(filtersarray, fltcenter
         popact[idx] = filtact
     stimcenter = popact/np.sum(popact) @ fltcenters
     return popact, stimcenter
+
+

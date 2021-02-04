@@ -116,13 +116,16 @@ fig, ax = plt.subplots(1,1)
 ax.violinplot(sortedlocerrsnf, showmedians=True, showextrema=False, \
                                                   quantiles=[[0.01,0.99] for a in range(len(sortedlocerrsnf))])
 hlp.plot_outliers_to_violinplot(sortedlocerrsnf, pcutoff, ax)   
-ax.set_xticklabels([0, *np.unique(simul2['Number of filters']), 'Pooled'])
+
+xtcklabels = [0, *np.unique(simul2['Number of filters']), 'Pooled']
+newlabels = hlp.violin_plot_xticklabels_add_nsimul(xtcklabels, sortedlocerrsnf)
+ax.set_xticklabels(newlabels)
 ax.set_xlabel('Number of filters')
 ax.set_ylabel('Decoding error [°]')
 ax.set_title('Absolute location decoding error (distance)')
 
 #now the subplots considering each size
-fig, axs = plt.subplots(1,3, sharex=True, sharey=True)
+fig, axs = plt.subplots(1,3, sharey=True)
 fig.suptitle('Absolute location decoding error (distance)')
 for idxl, loc in enumerate(np.unique(simul2['Stimulus center X'])):
     loclist = []
@@ -137,9 +140,13 @@ for idxl, loc in enumerate(np.unique(simul2['Stimulus center X'])):
 
     axs[idxl].set_title('XY location=%d°'%(loc))
     axs[idxl].set_xticks(np.arange(0,len(np.unique(simul2['Number of filters']))+2))
-    axs[idxl].set_xticklabels([0, *np.unique(simul2['Number of filters']), 'P'])
+    xtcklabels = [0, *np.unique(simul2['Number of filters']), 'P']
+    newlabels = hlp.violin_plot_xticklabels_add_nsimul(xtcklabels, loclist)
+    print(newlabels)
+    axs[idxl].set_xticklabels(newlabels)
 axs[1].set_xlabel('Number of filters')
 axs[0].set_ylabel('Decoding error [°]')
+plt.subplots_adjust(left=0.05, bottom=0.11, right=0.995, top=0.88, wspace=0.057, hspace=0.2)
 
 #generate the shift decoding error violin plot 
 shifterror = [] #each sublist for number of filters, each of which for different shift sizes.
@@ -182,7 +189,7 @@ for err in shifterrornorm:
     shifterrornormpooled.append([b for a in err for b in a])
 
 
-fig, axs = plt.subplots(2,3, sharex=True, sharey=True)
+fig, axs = plt.subplots(2,3, sharey=True)
 axs = axs.flatten()
 shifts = np.unique(np.diff(simul2['XY shift'])*np.sqrt(2))[np.unique(np.diff(simul2['XY shift'])*np.sqrt(2))>0]
 for idx, data in enumerate(shifterror):
@@ -191,15 +198,17 @@ for idx, data in enumerate(shifterror):
     hlp.plot_outliers_to_violinplot(data+[shifterrorpooled[idx]], pcutoff, axs[idx])   
     axs[idx].set_title('Number of filters=%i'%(np.unique(simul2['Number of filters'])[idx]))
     axs[idxl].set_xticks(np.arange(0,len(shifts)+2))
-    axs[idx].set_xticklabels([0, *np.round(shifts,2), 'P'])
+    xtcklabels = [0, *np.round(shifts,2), 'P']
+    newlabels = hlp.violin_plot_xticklabels_add_nsimul(xtcklabels, data+[shifterrorpooled[idx]])
+    axs[idx].set_xticklabels(newlabels)
 
 fig.suptitle('Absolute shift decoding errors for filter populations of different size')   
 axs[4].set_xlabel('Real shift magnitude [°]')
 axs[0].set_ylabel('Decoding error [°]')
 fig.delaxes(axs[-1])
-plt.subplots_adjust(hspace=0.274)
+plt.subplots_adjust(left=0.125, bottom=0.121, right=0.9, top=0.88, wspace=0.155, hspace=0.426)
 
-fig, axs = plt.subplots(2,3, sharex=True, sharey=True)
+fig, axs = plt.subplots(2,3, sharey=True)
 axs = axs.flatten()
 shifts = np.unique(np.diff(simul2['XY shift'])*np.sqrt(2))[np.unique(np.diff(simul2['XY shift'])*np.sqrt(2))>0]
 for idx, data in enumerate(shifterrornorm):
@@ -208,13 +217,16 @@ for idx, data in enumerate(shifterrornorm):
     hlp.plot_outliers_to_violinplot(data+[shifterrornormpooled[idx]], pcutoff, axs[idx])
     axs[idx].set_title('Number of filters=%i'%(np.unique(simul2['Number of filters'])[idx]))
     axs[idxl].set_xticks(np.arange(0,len(shifts)+2))
-    axs[idx].set_xticklabels([0, *np.round(shifts,2), 'P'])
+    xtcklabels = [0, *np.round(shifts,2), 'P']
+    newlabels = hlp.violin_plot_xticklabels_add_nsimul(xtcklabels, data+[shifterrornormpooled[idx]])
+    axs[idx].set_xticklabels(newlabels)
 
 fig.suptitle('Relative shift decoding errors for filter populations of different size')   
 axs[4].set_xlabel('Real shift magnitude [°]')
 axs[0].set_ylabel('Decoding error')
 fig.delaxes(axs[-1])
-plt.subplots_adjust(hspace=0.274)
+plt.subplots_adjust(left=0.13, bottom=0.126, right=0.898, top=0.88, wspace=0.086, hspace=0.438)
+
 #get the number of isnans for each nfilters from simul2
 for nf in np.unique(simul2['Number of filters']):
     decarray = np.array(simul2[simul2['Number of filters']==nf]['Decoded center X'])
@@ -241,9 +253,11 @@ sortedlocerrs1img.append(np.array([y for x in sortedlocerrs1img for y in x])) #t
 fig, ax = plt.subplots(1,1)
 ax.violinplot(sortedlocerrs1img, showmedians=True, showextrema=False, \
                                                   quantiles=[[0.01,0.99] for a in range(len(sortedlocerrs1img))])
-hlp.plot_outliers_to_violinplot(sortedlocerrs1img, pcutoff, ax)   
-
-ax.set_xticklabels([0, *np.unique(simul3['Number of filters']), 'Pooled'])
+hlp.plot_outliers_to_violinplot(sortedlocerrs1img, pcutoff, ax)
+xtcklabels = [0, *np.unique(simul3['Number of filters']), 'Pooled']   
+newlabels = hlp.violin_plot_xticklabels_add_nsimul(xtcklabels, sortedlocerrs1img)
+ax.set_xticklabels(newlabels)
+ax.set_xticklabels(newlabels)
 ax.set_xlabel('Number of filters')
 ax.set_ylabel('Decoding error [°]')
 ax.set_title('Absolute location decoding error (distance)')

@@ -84,10 +84,10 @@ Created on Thu Dec  3 10:31:45 2020
           
           +Thus generate also correct violinplots. Just go through them to save them.
                     
-          +Run a new simulation with single image where the stimulus location also randomly jitters as much as the 
+          .Run a new simulation with single image where the stimulus location also randomly jitters as much as the 
           average distance between filters (stimulus in the center of the visual field, if distance between filters is
           on average 60°, then the stimulus location jitters around +-30° in azimuth and elevation). Respective 
-          violinplots. Simulation in progress.
+          violinplots. DONE.
     
           +First try increasing the filter number in the image reconstruction model (2000 or 5000), also considering 
           different orientations for the Gabor filter.
@@ -105,5 +105,5 @@ Created on Thu Dec  3 10:31:45 2020
           activity levels of filters differing only in phase. Of course I can also simply weight all the filter 
           center locations with the respective activity level regardless of the filter maps.
           
-          +Improve lab meeting presentation until Monday morning.
+          .Improve lab meeting presentation until Monday morning. Probably finalized by now.
 """
