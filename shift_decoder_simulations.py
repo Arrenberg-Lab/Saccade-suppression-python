@@ -133,9 +133,9 @@ for n in range(nsimul):
                                                                                                     ,fltcenters[:,1])
         print('nfilter is %d' %(nfilter))
         #generate the image, center offset sampled randomly from discrete uniform distribution for each iteration.
-        fltdist = 90*rsl /np.sqrt(nfilter/2) #in pixels
+        fltdist = 90 /np.sqrt(nfilter/2) #in degrees
         print('fltdist is %.2f' %(fltdist))
-        off = np.random.randint(np.round(-fltdist/2), np.round(fltdist/2), 2) #1st value y jitter 2nd x of the img
+        off = np.random.randint(np.round(-fltdist/2), np.round(fltdist/2), 2) #1st value x jitter 2nd y of the img
         img, circcent = hlp.circle_stimulus(rdot, rsl, *(180, 90)+off)
         _, stimcent = hlp.florian_model_population_activity(filtersarray, fltcenters, img)
         scents[n, nidx, :] = stimcent
