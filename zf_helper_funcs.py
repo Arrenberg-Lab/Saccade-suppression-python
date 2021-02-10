@@ -957,7 +957,7 @@ def species_model_gabor(rsl, sf, sz, ph, normalize=False):
     return filterimg
 
 
-def plot_outliers_to_violinplot(data, pcutoff, ax):
+def plot_outliers_to_violinplot(data, pcutoff, ax, positions=None):
     """
     Plot the outlier datapoints to the violinplot as small black dots
     
@@ -969,14 +969,19 @@ def plot_outliers_to_violinplot(data, pcutoff, ax):
         The percentile cutoffs for a data to be considered as an outlier, between 0 and 100
     ax: axis object
         The axis to which the outliers are to be plotted.
-        
+    positions: 1-D array
+        The tick positions to where the outliers should be plotted. If None, all outlier sets are plotted with 1
+        tick apart from each other
     Returns
     --------
     """
     for didx, dat in enumerate(data):
         percentiles = np.percentile(np.array(dat)[~np.isnan(dat)], pcutoff)
         outliers = np.array(dat)[(dat<percentiles[0]) | (dat>percentiles[1])]
-        ax.plot(np.repeat(didx+1, len(outliers)), outliers, 'k.', markersize=1.5) 
+        if positions is None:
+            ax.plot(np.repeat(didx+1, len(outliers)), outliers, 'k.', markersize=1.5)
+        else:
+            ax.plot(np.repeat(positions[didx], len(outliers)), outliers, 'k.', markersize=1.5) 
     return
 
 

@@ -74,3 +74,46 @@ for nfidx, nfilters in enumerate(nfiltersarray):
             #add the values to arrays
             realcenters[1,nfidx,nc,nidx,:] = circcent
             decodedcenters[1,nfidx,nc,nidx,:] = stimcentermac            
+
+#Save the results
+ddict = {'Species': np.repeat(['Zebrafish', 'Macaque'],np.product(realcenters.shape)/4),
+         'Number of filters': np.tile(np.repeat(nfiltersarray, len(centoffs)*nsimul),2), 
+         'Real center X' : realcenters[:,:,:,:,0].flatten(),
+         'Real center Y' : realcenters[:,:,:,:,1].flatten(),
+         'Decoded center X' : decodedcenters[:,:,:,:,0].flatten(),
+         'Decoded center Y' : decodedcenters[:,:,:,:,1].flatten(),
+         'Simulation number' : np.tile(np.tile(np.arange(1,101),9),2)
+        }
+
+simuldf = pd.DataFrame.from_dict(ddict)
+filename = r'\zf_mac_simul_nsimul=%s_rsl_mac=%i_rsl_zf=5_rdot=%i_jsigma=%i_nfilters=%s_centoffs=%s' \
+           %(nsimul, rsl, rdot/rsl, jsigma, nfiltersarray, centoffs)
+simuldf.to_csv(savepath+filename)
+
+
+#Plot one exemplary parameter histogram for zf and mac each
+sfzf = []
+szzf = []
+for params in zfparams:
+    sfzf.append(params[0])
+    szzf.append(params[1])
+
+sfmac = []
+szmac = []
+for params in macparams:
+    sfmac.append(params[0])
+    szmac.append(params[1])
+
+fig, axs = plt.subplots(2,2)
+axs[0,0].hist(sfzf, bins=100, density=True)
+axs[0,1].hist(szzf, bins=100, density=True)
+axs[1,0].hist(sfmac, bins=100, density=True)
+axs[1,1].hist(szmac, bins=100, density=True)
+fig.suptitle('Parameter histograms')
+axs[0,0].set_title('Spatial frequency')
+axs[0,1].set_title('Size')
+axs[0,0].set_ylabel('Density')
+axs[1,0].set_xlabel('Spatial frequency [cyc/°]')
+axs[1,1].set_xlabel('RF diameter [°]')
+fig.text(0.5, 0.87, 'Zebrafish', size=25, horizontalalignment='center')
+fig.text(0.5, 0.45, 'Macaque', size=25, horizontalalignment='center')
