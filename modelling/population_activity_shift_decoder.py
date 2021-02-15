@@ -6,6 +6,9 @@ Created on Thu Jan 21 17:15:31 2021
 """
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 
 #Florian's model of image shift decoding.

@@ -7,6 +7,9 @@ Created on Wed Dec 16 14:21:37 2020
 
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 from zf_helper_funcs import rt
 from imageio import imread

@@ -7,6 +7,9 @@ Created on Mon Feb  8 14:19:23 2021
 
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
 savepath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data\simulations'
@@ -14,7 +17,7 @@ savepath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data\simulat
 #Species specific model simulations
 
 #For now do only macaque and zebrafish, keep reading literature to get more info.
-
+#Update: also negative shifts, and calculate shifts between the stimulus in center.
 nfiltersarray = [128, 1058, 10082]
 nsimul = 100
 
@@ -24,8 +27,12 @@ rsl = 24 #resolution as pixel per degrees, use to transform the degrees to pixel
         #corresponding to 1 degree.
 rdot = 5*rsl #the radius of the dot in pixels
 jsigma = 4 #the standard deviation of the jitter noise in degrees
-centoffs = np.round(np.logspace(0, np.log10(50), 3))
-centoffs[0] = 0
+centoffp = np.round(np.logspace(0, np.log10(60), 4))
+centoffp[0] = 0
+centoffs = np.zeros(len(centoffp)*2-1)
+centoffs[:len(centoffp)-1] = -np.flip(centoffp[1:])
+centoffs[len(centoffp)-1:] = centoffp
+
 
 #ZF AND MACAQUE STUFF ARE MOVED TO DISTINCT FUNCTIONS
 

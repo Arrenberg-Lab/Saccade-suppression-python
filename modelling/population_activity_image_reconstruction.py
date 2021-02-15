@@ -6,6 +6,9 @@ Created on Tue Jan 26 13:34:39 2021
 """
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 
 #Use the population activity model of FLorian's, weight each of the filter with their respective activity in order to

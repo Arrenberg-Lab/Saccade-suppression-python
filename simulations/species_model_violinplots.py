@@ -7,6 +7,9 @@ Created on Tue Feb  9 17:39:28 2021
 
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
 import matplotlib.ticker as ticker
@@ -82,8 +85,11 @@ realxymac = np.zeros([nnfilters,nsimul,nstimuli,2])
 decxymac = np.zeros([nnfilters,nsimul,nstimuli,2])
 decxymac = np.zeros([nnfilters,nsimul,nstimuli,2])
 """
-shifterrzf = np.zeros([nnfilters, 3, nsimul])
+shifterrzf = np.zeros([nnfilters, 3, nsimul]) #number of different filters tested x number of shifts x nsimul
 shifterrmac = np.zeros([nnfilters, 3, nsimul])
+decshiftszf = np.zeros([nnfilters, 3, nsimul]) #just necessary for the square plots way below, so only doing for zf.
+
+realshifts = np.round(np.array([7,43,50])*np.sqrt(2),2)
 
 for nidx, nf in enumerate(np.unique(zebrafish['Number of filters'])):
     
@@ -118,29 +124,32 @@ for nidx, nf in enumerate(np.unique(zebrafish['Number of filters'])):
         for idx in range(len(realxzf)):
             r = len(realxzf) #to use modulo in a shorter way. Modulo is used to wrap around the array in the last
                              #index to get the shift between the last and first stimulus.
-            realshiftzf = np.sqrt((realxzf[idx] - realxzf[(idx+1)%r])**2 + (realyzf[idx] - realyzf[(idx+1)%r])**2)
+
             decshiftzf = np.sqrt((decxzf[idx] - decxzf[(idx+1)%r])**2 + (decyzf[idx] - decyzf[(idx+1)%r])**2)
-            decerrzf = decshiftzf - realshiftzf
+            if np.isnan(decshiftzf) == True:
+                decshiftzf = 0
+            decerrzf = decshiftzf - realshifts[idx]
             shifterrzf[nidx, idx, sidx] = decerrzf
+            decshiftszf[nidx, idx, sidx] = decshiftzf
             
-            realshiftmac = np.sqrt((realxmac[idx]-realxmac[(idx+1)%r])**2 + (realymac[idx] - realymac[(idx+1)%r])**2)
             decshiftmac = np.sqrt((decxmac[idx] - decxmac[(idx+1)%r])**2 + (decymac[idx] - decymac[(idx+1)%r])**2)
-            decerrmac = decshiftmac - realshiftmac
+            if np.isnan(decshiftmac) == True:
+                #print(realshifts)
+                decshiftmac = 0
+            decerrmac = decshiftmac - realshifts[idx]
             shifterrmac[nidx, idx, sidx] = decerrmac
             #print(realshiftzf, realshiftmac) #comparable to the shifts calculated by using values 0,7,50
-
-realshifts = np.round(np.array([7,43,50])*np.sqrt(2),2)
             
 #plotting
 fig, axs = plt.subplots(1, nnfilters, sharey=True)
 for idx in range(nnfilters):
-    zfdat = [b[~np.isnan(b)] for b in shifterrzf[idx, :, :]]
+    zfdat = [b for b in shifterrzf[idx, :, :]]
     vp1 = axs[idx].violinplot(zfdat, showmedians=True, showextrema=False, positions=np.arange(len(zfdat))*2,\
                        quantiles=[[0.01,0.99] for a in range(len(zfdat))])
     hlp.plot_outliers_to_violinplot(zfdat, pcutoff, axs[idx], positions=np.arange(len(zfdat))*2)   
     
     
-    macdat = [b[~np.isnan(b)] for b in shifterrmac[idx, :, :]]
+    macdat = [b for b in shifterrmac[idx, :, :]]
     vp2 = axs[idx].violinplot(macdat, showmedians=True, showextrema=False, positions=np.arange(len(macdat))*2+1, \
                        quantiles=[[0.01,0.99] for a in range(len(macdat))])
     hlp.plot_outliers_to_violinplot(macdat, pcutoff, axs[idx], positions=np.arange(len(macdat))*2+1)   
@@ -148,13 +157,39 @@ for idx in range(nnfilters):
     labeldat = [b for a in labeldat for b in a]
     axs[idx].set_xticks(np.arange(0,6,2)+0.5)
     axs[idx].set_xticklabels(realshifts)
+    """
     for i in range(len(zfdat)):
         axs[idx].text(0+i*2,-70, '(%i)'%(len(zfdat[i])), size=15, horizontalalignment='center')
         axs[idx].text(1+i*2,-70, '(%i)'%(len(macdat[i])), size=15, horizontalalignment='center')
+    """
     axs[idx].set_title('nfilters = %i'%(np.unique(zebrafish['Number of filters'])[idx]))
 fig.suptitle('Stimulus shift decoding error [$\circ$]')
 axs[0].set_ylabel('Decoding error [$\circ$]')
-axs[1].set_xlabel('Stimulus shift magnitude [$\circ$]', labelpad=20)
+axs[1].set_xlabel('Stimulus shift magnitude [$\circ$]')#, labelpad=20)
 axs[2].legend([vp1['bodies'][0],vp2['bodies'][0]], ['Zebrafish', 'Macaque'])
 plt.subplots_adjust(left=0.067, bottom=0.13, right=0.99, top=0.88, wspace=0.06, hspace=0.2)
 
+#Square plots:
+fig, axs = plt.subplots(1,2, sharex =True, sharey=True)
+for idx in range(decshiftszf.shape[1]):
+    errdata1 = decshiftszf[1,idx,:]
+    errdata2 = decshiftszf[2,idx,:]
+    axs[0].plot(np.repeat(realshifts[idx], len(errdata1)), errdata1, 'r.')
+    axs[1].plot(np.repeat(realshifts[idx], len(errdata2)), errdata2, 'r.')
+axs[0].set_xlim(axs[0].get_ylim())
+axs[1].set_xlim(axs[0].get_ylim())
+axs[1].set_ylim(axs[0].get_ylim())
+axs[0].plot(axs[0].get_xlim(), axs[0].get_ylim(), 'k-')
+axs[1].plot(axs[0].get_xlim(), axs[0].get_ylim(), 'k-')
+axs[0].set_aspect('equal')
+axs[1].set_aspect('equal')
+axs[0].set_title('nfilters=%i'%(np.unique(zebrafish['Number of filters'])[1]))
+axs[1].set_title('nfilters=%i'%(np.unique(zebrafish['Number of filters'])[2]))
+axs[0].set_ylabel('Decoded shift [°]')
+axs[0].set_xlabel('Real shift [°]')
+
+#calculate error factors for macaque and zf:
+abserrmac = np.abs(shifterrmac)
+abserrzf = np.abs(shifterrzf)
+avgerrmacpernfilters = np.mean(abserrmac[:,2,:],axis=1)
+avgerrzfpernfilters = np.mean(abserrzf[:,2,:],axis=1)

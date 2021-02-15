@@ -7,6 +7,9 @@ Created on Sat Feb  6 14:36:11 2021
 
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
 loadpath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data'

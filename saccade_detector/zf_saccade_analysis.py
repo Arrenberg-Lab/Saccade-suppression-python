@@ -7,10 +7,11 @@ Created on Thu Dec  3 10:33:21 2020
 
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 from zf_helper_funcs import rt
-import sys
-sys.path.insert(0, r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\OnlineSaccadeDetection-master\python')
 import matplotlib as mpl
 import sklearn.linear_model as linreg
 import statsmodels.api as sm
