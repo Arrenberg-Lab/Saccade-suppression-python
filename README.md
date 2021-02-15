@@ -19,7 +19,7 @@ The scripts in this folder are used to generate and test the shift decoder model
 zf_saccade_analysis.py is used to detect and extract saccades for further analysis, and generates the figures located in /data. zf_plot_saccades.py can be used to check each saccade one by one.
 
 ### /simulations
-scripts in this folder runs specific model simulations and saves them in the respective subfolder in \data, and generates violin plots based on the simulation results (scripts with the name ..._violinplot.py)
+scripts in this folder run specific model simulations and saves them in the respective subfolder in \data, as well as generate violin plots based on the simulation results (scripts with the name ..._violinplot.py)
 
 ### zf_helper_funcs.py
 This script contains all of the functions and classes used in all other scripts. Each function is documented in detail.
