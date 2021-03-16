@@ -14,7 +14,7 @@ import zf_helper_funcs as hlp
 from zf_helper_funcs import rt
 
 #import saccade data 
-root = r'E:\HSC_saccades'
+root = r'\\172.25.250.112\arrenberg_data\shared\Ibrahim\HSC_saccades'
 angthres = 5
 flthres = 0.3
 """

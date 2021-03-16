@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from skimage import io, filters
+from scipy.stats import reciprocal #log normal distribution
 import random
 try:
     from numba import jit
@@ -165,7 +166,7 @@ def running_median(array,n):
     ----------
     array: 1-D array
         The array to be smoothed by the running median
-    N: integer:
+    n: integer
         Size of the running median window
         
     Returns
@@ -207,7 +208,7 @@ def detect_saccade(saccade, negativity):
         The index of the saccade offset
     """
     meanonset = np.median(saccade[:10]) 
-    sacthres =  0.4+ 10*np.std(saccade[:15])
+    sacthres =  0.4 + 10*np.std(saccade[:15])
     thres = False
     saconset = 10
     
@@ -664,6 +665,8 @@ def circle_stimulus(rdot, rsl, dxcent=None, dycent=None):
     circcent: 1-D array
         The x and y locations of the circle center in degrees
     """
+    #TODO: ENSURE THE NEGATIVE ELEVATIONS AND SIMILAR ARE HANDLED CORRECTLY. FOR NOW ONLY AZIMUTH CORRECTIONS 
+    #ARE IMPLEMENTED. SEE ALSO FLORIAN_MODEL FOR THE IMPLEMENTATION
     img = np.zeros([180*rsl,360*rsl])
     xvals, yvals = np.meshgrid(np.linspace(-rdot, rdot, 2*rdot), np.linspace(-rdot, rdot, 2*rdot))
     dot = xvals**2 + yvals**2 <= rdot**2
@@ -673,7 +676,24 @@ def circle_stimulus(rdot, rsl, dxcent=None, dycent=None):
         dxcent = np.random.randint(rdot, (360-rdot))
         dycent = np.random.randint(rdot, (180-rdot))
     
-    img[np.int(dycent*rsl-rdot):np.int(dycent*rsl+rdot), np.int(dxcent*rsl-rdot):np.int(dxcent*rsl+rdot)] = dot
+    #WRAP THE STIMULUS AROUND AZIMUTH WHEN NEEDED!
+    if np.round(dxcent*rsl-rdot) < 0:
+        dxcent = dxcent + img.shape[1]/rsl
+    
+    if np.round(dycent*rsl-rdot) < 0:
+        dycent = dxcent + img.shape[1]
+    
+    if (dxcent*rsl-rdot) > (dxcent*rsl+rdot)%img.shape[1]:
+        xext = img.shape[1]
+        img[np.round(dycent*rsl-rdot).astype(int):np.round(dycent*rsl+rdot).astype(int), \
+            np.round(dxcent*rsl-rdot).astype(int):] = dot[:, :xext-np.round((dxcent*rsl-rdot)).astype(int)]
+        img[np.round(dycent*rsl-rdot).astype(int):np.round(dycent*rsl+rdot).astype(int), \
+            :np.round((dxcent*rsl+rdot)%img.shape[1]).astype(int)] = \
+                                                    dot[:, xext-np.round((dxcent*rsl-rdot)).astype(int):]
+        
+    else:
+        img[np.round(dycent*rsl-rdot).astype(int):np.round(dycent*rsl+rdot).astype(int), \
+            np.round(dxcent*rsl-rdot).astype(int):np.round(dxcent*rsl+rdot).astype(int)] = dot
     return img, np.array([dxcent, dycent])
 
 
@@ -833,7 +853,9 @@ def florian_model_population_activity(filtersarray, fltcenters, img):
     popact: 1-D array
         The filter population activity
     stimcenters: 1-D array
-        The estimated center of stimulus from population activity (x and y locations)
+        The estimated center of stimulus from population activity (x and y locations). 
+        !Note that the stimulus centers are not in degrees but in pixel values. Furthermore the x pixel values go from 0 
+        to 360*rsl from left to right, and y pixel values from 0 to 180*rsl from top to bottom.
     """
     popact = np.zeros(filtersarray.shape[0])
     for idx, filt in enumerate(filtersarray):
@@ -843,7 +865,7 @@ def florian_model_population_activity(filtersarray, fltcenters, img):
     return popact, stimcenter
 
 
-def florian_model_species_edition(img, rsl, parameters, xloc, yloc):
+def florian_model_species_edition(img, rsl, parameters, xloc, yloc, imgrec=False):
     """
     Filter population and population activity functions have to be fused together for species simulations, since you
     have to go through each filter one by one to get the respective activity and get the stimulus position estimate.
@@ -861,6 +883,8 @@ def florian_model_species_edition(img, rsl, parameters, xloc, yloc):
         The filter centers (x coordinate)
     yloc: 1-D array
         The filter centers (y coordinate)
+    imgrec: boolean
+        If true, return the image reconstruction by multiplying each filter with its absolute population activity
         
     Returns
     -------
@@ -869,6 +893,8 @@ def florian_model_species_edition(img, rsl, parameters, xloc, yloc):
     popact: 1-D array
         The activity of each filter caused by the stimulus
     """
+    if imgrec == True:
+        recimg = np.zeros(img.shape)
     filtersimg = np.zeros(img.shape)
     popact = np.zeros(len(parameters))
     for idx, params in enumerate(parameters):
@@ -909,15 +935,25 @@ def florian_model_species_edition(img, rsl, parameters, xloc, yloc):
         
         #get the activity for each filter per loop
         if xstop < xstart:
-            filtact = np.abs(np.sum(filterarray[ystart:ystop, xstart:]*img[ystart:ystop, xstart:]) + \
-                             np.sum(filterarray[ystart:ystop, :xstop]*img[ystart:ystop, :xstop]))
+            filtact = np.sum(filterarray[ystart:ystop, xstart:]*img[ystart:ystop, xstart:]) + \
+                             np.sum(filterarray[ystart:ystop, :xstop]*img[ystart:ystop, :xstop])
         else:
-            filtact = np.abs(np.sum(filterarray[ystart:ystop, xstart:xstop]*img[ystart:ystop, xstart:xstop]))
-        popact[idx] = filtact
+            filtact = np.sum(filterarray[ystart:ystop, xstart:xstop]*img[ystart:ystop, xstart:xstop])
+        popact[idx] = np.abs(filtact)
         
-    return filtersimg, popact
-    
-  
+        if imgrec == True and filtact != 0:
+            recimg[filterarray!=0] += filterarray[filterarray!=0] * filtact
+        else:   
+            pass
+        
+    if imgrec == True:
+        recimg /= len(parameters)
+        recimg[recimg < np.max(recimg)-np.std(recimg)] = 0
+        return filtersimg, popact, recimg  
+    else:
+        return filtersimg, popact
+        
+        
 def species_model_gabor(rsl, sf, sz, ph, normalize=False):
     """
     Since for higher resolutions (e.g. 20 pixels per degree) the Gabor function is very computationaly heavy, I 
@@ -1104,14 +1140,21 @@ class generate_species_parameters:
         """
 
        
-    def zebrafish(self):
+    def zebrafish(self, sfdist='logunif'):
         """
         SF:
         Only info I found was upper resolution limit is 1° so
         max SF is 1 cyc/° (Sajovic & Levinthal 1982) so I guess sample uniformly between 0-1
+        !UPDATE: As of 21.02.2021 the spatial frequencies are log normal distributed, so any simulations after this
+        date differ in zebrafish DF distribution.
         """
-        zfsfparams = np.random.uniform(0,1,self.nfilters)
-        
+        if sfdist == 'logunif':
+            zfsfparams = reciprocal(0.000001,1).rvs(self.nfilters)
+        elif sfdist == 'unif':
+            zfsfparams = np.random.uniform(0,1, self.nfilters)    
+        #since 0 does not work in log, a workaround is to choose a positive very tiny number  
+        #(i.e. infinitesimally small).
+                                                          
         """
         RF size:
         Wang et al. 2020: Biggest RF 168x80, 86% 30x13-90x39, remaining 14% bigger than that 
