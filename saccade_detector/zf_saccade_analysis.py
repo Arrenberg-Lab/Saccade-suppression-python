@@ -16,6 +16,7 @@ import matplotlib as mpl
 import statsmodels.api as sm
 from matplotlib.ticker import ScalarFormatter
 from scipy.stats import mannwhitneyu
+from scipy.optimize import curve_fit
 
 #import saccade data 
 root = r'\\172.25.250.112\arrenberg_data\shared\Ibrahim\HSC_saccades'
@@ -331,9 +332,13 @@ xi = np.std(alltraceswithoutsac)
 #use the average saccade as template
 #in the saccades array, the onset is the first data point, and offset is the last data point.
 
+#epsilon estimate is too big! check the relationship between u and epsilon, since a big epsilon estimate can be mediated by small
+#u values and the general mismatch between your template and saccade trace. 
+
 usp = [] #template corollary discharge for positive
 for idx, sac in enumerate(possaccades):
     template = meantimebinsp[:len(sac)]*(sac[-1]-sac[0])+sac[0]
+    
     """
     #Check if template matches the saccades
     plt.figure()
@@ -356,7 +361,7 @@ usp = np.unique(usp)
 #same analysis for negative saccades:
 usn = [] #template corollary discharge for positive
 for idx, sac in enumerate(negsaccades):
-    template = meantimebinsp[:len(sac)]*(sac[-1]-sac[0])+sac[0]
+    template = meantimebinsn[:len(sac)]*np.abs(sac[-1]-sac[0])+sac[0]
     """
     #Check if template matches the saccades
     plt.figure()
@@ -394,15 +399,97 @@ for idx, sac in enumerate(possaccades):
     mnoise = (template-sac)**2 #total motor noise
     
     eps = np.sqrt(mnoise[1:]-np.var(alltraceswithoutsac))/uvals #s_eps
+    
+    """
+    #Check u, epsilon and total motor noise for each saccade.
+    #I possibly found the problem, template does not match with eye trace in around middle of the saccade, where u is particularly
+    #small. This leads a really big estimate for s_epsilon (variable eps in the code), since some really big value is divided by 
+    #some really small value. To test this, try a parametric (exponential) fit to the saccade in determining motor noise mnoise.
+    fig, axs = plt.subplots(1, 4, sharex=True)#plot template with saccade, eps(t), u(t) and total motor noise in subplots
+    #template with saccade
+    axs[0].plot(template, label='template')
+    axs[0].plot(sac, label='saccade')
+    axs[0].legend()
+    #total motor noise
+    axs[1].plot(mnoise, 'k.', label=r'$s_m$')
+    axs[1].plot([0, len(mnoise)], np.repeat(np.var(alltraceswithoutsac), 2), 'r', label=r'$s_\xi$')
+    axs[1].legend()
+    #epsilon(t)
+    axs[2].plot(eps, 'k.')
+    axs[2].set_ylim(0, np.percentile(eps[(~np.isnan(eps)) & (~np.isinf(eps))], 99))
+    axs[3].plot(uvals, 'k.')
+    #titles and axis labels
+    axs[0].set_xlabel('Time [ms]')
+    axs[0].set_title('Template and saccade')
+    axs[1].set_title('$s_m$')
+    axs[2].set_title('$s_{\epsilon\prime}$')
+    axs[3].set_title('u')
+    plt.subplots_adjust(left=0.062, bottom=0.09, right=0.983, top=0.88, wspace=0.252, hspace=0.2)
+    plt.get_current_fig_manager().window.state('zoomed')
+    while True:
+        if plt.waitforbuttonpress():
+            plt.close()
+            break
+    """
     uvals = uvals[(~np.isnan(eps)) & (~np.isinf(eps))] 
     eps = eps[(~np.isnan(eps)) & (~np.isinf(eps))]
     
     for i, u in enumerate(uvals): #separate each eps to the respective bin of u
         epsbin = np.where(ubinsp<u)[0][-1]
         epsbinnedp[epsbin].append(eps[i])
-                                                  
+    
+#Fit function from Dai et al. 2016
+def fit_func(t, c, nu, tau, t_0, s_0): #this is terrible coding practice (function to funcs script) but this script is
+                                        #momentarily a mess so anyways I will do tons of clean-up. HENCE TRANSFER THIS FUNC
+                                        #TO HELPER FUNCS IF U STILL GONNA USE IT!
+    fitfunc = c*(nu*(t-t_0)/c+0.25*np.e**(-2*nu*(t-t_0)/c)) - c*(nu*(t-tau-t_0)/c+0.25*np.e**(-2*nu*(t-tau-t_0)/c)) + s_0
+    return fitfunc
+
+for idx, sac in enumerate(possaccades):
+    t = np.arange(0,len(sac))
+    fitparams, _ = curve_fit(fit_func, t, sac, method='lm', maxfev=10000)
+    template = fit_func(t, *fitparams)
+    uvals = np.diff(template) #u of template so that xi is removed (since average saccade).
+    uvals = np.abs(uvals)
+
+    mnoise = (template-sac)**2 #total motor noise
+    
+    eps = np.sqrt(mnoise[1:]-np.var(alltraceswithoutsac))/uvals #s_eps
+    
+    #Check u, epsilon and total motor noise for each saccade.
+    #I possibly found the problem, template does not match with eye trace in around middle of the saccade, where u is particularly
+    #small. This leads a really big estimate for s_epsilon (variable eps in the code), since some really big value is divided by 
+    #some really small value. To test this, try a parametric (exponential) fit to the saccade in determining motor noise mnoise.
+    fig, axs = plt.subplots(1, 4, sharex=True)#plot template with saccade, eps(t), u(t) and total motor noise in subplots
+    #template with saccade
+    axs[0].plot(template, label='template')
+    axs[0].plot(sac, label='saccade')
+    axs[0].legend()
+    #total motor noise
+    axs[1].plot(mnoise, 'k.', label=r'$s_m$')
+    axs[1].plot([0, len(mnoise)], np.repeat(np.var(alltraceswithoutsac), 2), 'r', label=r'$s_\xi$')
+    axs[1].legend()
+    #epsilon(t)
+    axs[2].plot(eps, 'k.')
+    #axs[2].set_ylim(0, np.percentile(eps[(~np.isnan(eps)) & (~np.isinf(eps))], 99))
+    axs[3].plot(uvals, 'k.')
+    #titles and axis labels
+    axs[0].set_xlabel('Time [ms]')
+    axs[0].set_title('Template and saccade')
+    axs[1].set_title('$s_m$')
+    axs[2].set_title('$s_{\epsilon\prime}$')
+    axs[3].set_title('u')
+    plt.subplots_adjust(left=0.062, bottom=0.09, right=0.983, top=0.88, wspace=0.252, hspace=0.2)
+    plt.get_current_fig_manager().window.state('zoomed')
+    while True:
+        if plt.waitforbuttonpress():
+            plt.close()
+            break
+
+    
+                                               
 for idx, sac in enumerate(negsaccades):
-    template = meantimebinsp[:len(sac)]*(sac[-1]-sac[0])+sac[0]
+    template = meantimebinsn[:len(sac)]*np.abs(sac[-1]-sac[0])+sac[0]
     uvals = np.diff(template) #u of template so that xi is removed (since average saccade).
     uvals = np.abs(uvals)
 
@@ -416,12 +503,33 @@ for idx, sac in enumerate(negsaccades):
         epsbin = np.where(ubinsn<u)[0][-1]
         epsbinnedn[epsbin].append(eps[i])
 
+#You have eps for positive and negative saccades, binned per u, now, you can check the relationship between u and epsilon
+fig, ax = plt.subplots(1,1)
+for idx, u in enumerate(ubinsp[1:]):
+    epsvalsp = epsbinnedp[idx]
+    #epsvalsn = epsbinnedn[idx]
+    ax.plot(np.repeat(u, len(epsvalsp)), epsvalsp, 'r.')
+    #ax.plot(np.repeat(u, len(epsvalsn)), epsvalsn, 'b.')
+ax.set_xlim(0,0.5)
+ax.set_ylim(0,1000)
+
+"""
 #check if eps distribution differs 
-epspooledp = [a for b in epsbinnedp for a in b]
-epspooledn = [a for b in epsbinnedn for a in b]
+epspooledp = np.array([a for b in epsbinnedp for a in b])
+epspooledn = np.array([a for b in epsbinnedn for a in b])
 epspooledp = np.array(epspooledp)
 epspooledn = np.array(epspooledn)
-_, peps = mannwhitneyu(epspooledp, epspooledn) #0.274 so not significant, you can pool
+_, peps = mannwhitneyu(epspooledp, epspooledn) #yes significant, check for outliers as medians very close so weird thing happening
+
+#outlier boundaries for epsp and epsn
+epspol = np.median(epspooledp) + np.array((-1,1)) * 1.5 *(np.percentile(epspooledp,75)-np.percentile(epspooledp,25)) 
+epsnol = np.median(epspooledn) + np.array((-1,1)) * 1.5 *(np.percentile(epspooledn,75)-np.percentile(epspooledn,25)) 
+
+epsfilteredp = epspooledp[(epspooledp>epspol[0]) & (epspooledp<epspol[1])]
+epsfilteredn = epspooledn[(epspooledn>epsnol[0]) & (epspooledn<epsnol[1])]
+_, pepsfilt = mannwhitneyu(epsfilteredp, epsfilteredn)
+#They do differ significantly!!!
+"""
 
 #pool epsbinnedp and n according to u:
 epsbinnedpooled = [[epsbinnedp[a] + epsbinnedn[a]] for a in range(len(epsbinnedp))]
@@ -430,7 +538,6 @@ epsmeanperu = [np.mean(a) for a in epsbinnedpooled]
 ubinspooled = ubinspooled[1:][~np.isnan(epsmeanperu)]
 epsmeanperu = np.array(epsmeanperu[1:])[~np.isnan(epsmeanperu[1:])]
 
-
 #plot eps histogram for different u values
 fig, ax = plt.subplots(1,1)
 ax.hist(epsmeanperu, bins=20, color='k', density=True)
@@ -438,7 +545,50 @@ ax.set_ylabel('Frequency density')
 ax.set_xlabel('Average $s_{\epsilon^\prime_i}$ per $\overline{|u(t)|}$ bin')
 ax.set_title('Average $s_{\epsilon^\prime_i}$ distribution for all $\overline{|u(t)|}$ bins')
 
-epsmediantot = np.median(epsmeanperu) #5.1
+epsmediantot = np.median(epsmeanperu) #3.187 after correcting the negative saccade template.
+
+#plot showing how epsilon and xi are calculated:
+extrace = sacdat[:, 7]
+exon = saconsets[7].astype(int)
+exoff = sacoffsets[7].astype(int)
+temp = meantimebinsp[:exoff-exon]*(extrace[exoff]-extrace[exon])+extrace[exon]
+t = np.linspace(0,len(extrace),len(extrace))
+fig, axs = plt.subplots(2,2)
+for ax in axs.flatten():
+    ax.set_xticks([])
+    ax.set_yticks([])
+#plot the eye traces
+axs[0,0].plot(t[:exon]/1000, extrace[:exon], 'k-')
+axs[0,0].plot(t[exon:exoff]/1000,extrace[exon:exoff], color='gray', alpha=0.5)
+axs[0,0].plot(t[exoff:]/1000, extrace[exoff:], 'k-')
+#zoom rectangle to relevant area
+axs[0,0].plot(np.array([t[exoff], t[exoff]])/1000, [np.min(extrace[exoff:])-1, np.max(extrace[exoff:])+1] ,'b-')
+axs[0,0].plot(np.array([t[-1], t[-1]])/1000, [np.min(extrace[exoff:])-1, np.max(extrace[exoff:])+1] ,'b-')
+axs[0,0].plot([t[exoff]/1000, t[-1]/1000], [np.min(extrace[exoff:])-1, np.min(extrace[exoff:])-1] ,'b-')
+axs[0,0].plot([t[exoff]/1000, t[-1]/1000], [np.max(extrace[exoff:])+1, np.max(extrace[exoff:])+1] ,'b-')
+
+axs[1,0].plot(t[:exon]/1000, extrace[:exon], color='gray', alpha=0.5)
+axs[1,0].plot(t[exon:exoff]/1000,extrace[exon:exoff], 'k-')
+axs[1,0].plot(t[exoff:]/1000, extrace[exoff:], color='gray', alpha=0.5)
+#zoom rectangle to relevant area
+axs[1,0].plot(np.array([t[exon], t[exon]])/1000, [np.min(extrace[exon:exoff])-1, np.max(extrace[exon:exoff])+1] ,'b-')
+axs[1,0].plot(np.array([t[exoff], t[exoff]])/1000, [np.min(extrace[exon:exoff])-1, np.max(extrace[exon:exoff])+1] ,'b-')
+axs[1,0].plot([t[exon]/1000, t[exoff]/1000], [np.min(extrace[exon:exoff])-1, np.min(extrace[exon:exoff])-1] ,'b-')
+axs[1,0].plot([t[exon]/1000, t[exoff]/1000], [np.max(extrace[exon:exoff])+1, np.max(extrace[exon:exoff])+1] ,'b-')
+
+#plot zoomed locations
+axs[0,1].plot(t[exoff:]/1000, extrace[exoff:], 'k-', label='trace')
+axs[0,1].plot([t[exoff]/1000,t[-1]/1000], [np.mean(extrace[exoff:]),np.mean(extrace[exoff:])], 'r-', label='mean')
+axs[0,1].legend()
+
+axs[1,1].plot(t[exon:exoff]/1000, extrace[exon:exoff], 'k-', label='trace')
+axs[1,1].plot(t[exon:exoff]/1000, temp, 'r-', label='template')
+axs[1,1].legend()
+#names etc:
+axs[0,0].set_ylabel('Resting state')
+axs[1,0].set_ylabel('During saccade')
+axs[0,0].set_title('Eye trace')
+axs[0,1].set_title('Zoomed eye trace')
 
 """
 #Check saccade traces before and after saccade
