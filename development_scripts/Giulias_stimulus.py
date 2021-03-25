@@ -55,4 +55,15 @@ for i in range(totframes):
     shiftleft[:,:arenaaz*rsl,i+1] = finalstim[elevrest*rsl:(elevrest+2*arenaelev)*rsl, xintleft[0]:xintleft[1]]
     shiftright[:,arenaaz*rsl:,i+1] = shiftright[:,:arenaaz*rsl,i+1]
     shiftleft[:,arenaaz*rsl:,i+1] = shiftleft[:,:arenaaz*rsl,i+1]
+
+
+fig, ax = plt.subplots()
+plt.get_current_fig_manager().window.state('zoomed')
+ax.imshow(shiftright[:,:,0], extent=[-168,168,-40,40])
+plt.pause(0.5)
+for i in range(totframes):
+    ax.imshow(shiftright[:,:,i+1], extent=[-168,168,-40,40])
+    plt.pause(0.5)
+                
+        
 #Stimulus -> omit the black stripes in between, as they are for luminance modulation. ASK FLORIAN THO!

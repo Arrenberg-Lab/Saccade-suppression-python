@@ -21,6 +21,8 @@ except ImportError:
         def decorator_jit(func):
             return func
         return decorator_jit
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal import savgol_filter
 
 #Script for functions used in the saccadic suppression project
 
@@ -1187,3 +1189,181 @@ class generate_species_parameters:
         stimcenter = popact/np.sum(popact) @ fltcenters
         stimcenter /= rsl
         """
+
+def detect_saccades_v2(rawdata, smoothsigma=10, velthres=1000, accthres=100000, savgollength=51, savgolorder=4, rf=1000, a=0.05, b=0.05, velperc=90):
+    """
+    Improved saccade onset and offset detection algorithm adapted from Nyström & Holmqvist 2010
+    
+    Parameters
+    ----------
+    rawdata: 1-D array
+        The raw saccade trace data
+    rf: float, optional
+        Temporal sampling frequency in Hz
+    smoothsigma: float, optional
+        The standard deviation of the Gaussian smoothing kernel
+    savgollength: float, optional
+        The length of the Savitzky-Golay filter in ms
+    savgolorder: float, optional
+        The polynomial order of the Savitzky-Golay fit. See also scipy.signal.savgol_filter documentation
+    velthres: float, optional
+        The velocity threshold for the filtered data in °/s. Any velocity bigger than this value is physiologically unrealistic
+        and is therefore discarded.
+    accthres: float, optional
+        The acceleration threshold for the filtered data in °/s^2. Any acceleration bigger than this value is physiologically 
+        unrealistic and is therefore discarded.
+    a: float, optional
+        Weight factor of the global noise for saccade offset detection
+    b: float, optional
+        Weight factor of the local noise for saccade offset detection
+    saconidx: integer, optional
+        In one instance, saccade onset cannot be reliably detected by the algorithm, since the onset is at 0. Thus, this
+        optional variable is used to specify the saccade onset index manually when needed.
+    velperc: float, optional
+        Percentile for the saccade velocity threshold. Can be between 0 and 100.
+    Returns
+    -------
+    saconidx: integer
+        The index of the saccade onset
+    sacoffidx: integer
+        The index of the saccade offset
+    """
+    smoothdata = gaussian_filter1d(rawdata,smoothsigma)
+        
+    velocitydata = np.abs(savgol_filter(smoothdata, savgollength, savgolorder, deriv=1) * rf) #filtered LE velocity in °/s
+    #if the last velocity point in the data is extremely high, this likely indicates a recording artifact, so velocity is set to 0
+    if velocitydata[-1] > 20: 
+        velocitydata[-50:] = 0
+    #discard velocity values bigger than threshold
+    velocitydata[velocitydata>velthres] = None
+    accdata = np.abs(savgol_filter(smoothdata, savgollength, savgolorder, deriv=2) * rf**2) #filtered LE acceleration in °/s^2
+    #discard data points exceeding acceleration threshold.
+    velocitydata[accdata>accthres] = None
+    
+    #saccade velocity threshold estimation: iterative and data-driven approach
+    sacvelthres = np.percentile(velocitydata[~np.isnan(velocitydata)],velperc) #set the initial threshold to 99th percentile to be on the safe side
+    #iteration
+    thres = False
+    iternum = 0
+    stdval = 6
+    while thres == False:
+        iternum += 1
+        underthres = velocitydata[velocitydata<sacvelthres]
+        previoussacvelthres = sacvelthres
+        sacvelthres = np.mean(underthres[~np.isnan(underthres)]) + stdval*np.std(underthres[~np.isnan(underthres)])
+        if sacvelthres >= np.max(velocitydata):
+            stdval -= 0.5
+        elif np.abs(previoussacvelthres-sacvelthres) < 1:
+            #print(iternum)
+            thres = True
+    
+    #saccade onset detection: saccade onset velocity threshold is defined as mean+3*std for eye traces lower than peak threshold
+    underthres = velocitydata[0 : np.where(velocitydata>=sacvelthres)[0][0]]
+    onstd = 3
+    saconthres = np.mean(underthres) + onstd*np.std(underthres)
+    saconidx = np.where((underthres[1:] < saconthres) & (np.diff(underthres)>=0))[0][-1] #index of first peak exceeding velocity threshold
+    
+    
+    #Saccade offset detection: choose the leftmost velocity peak and search forward from there to find wished saccade.
+    offpeakidx = np.where(velocitydata>=sacvelthres)[0][-1]
+    underthres = velocitydata[offpeakidx:] #saccade velocity trace from last velocity peak on
+    
+    if saconidx < 40:
+        presaccade = velocitydata[:saconidx] #velocity curve before saccade onset 
+    else:
+        presaccade = velocitydata[saconidx-40:saconidx] #velocity curve before saccade onset
+    
+    noisefac = np.mean(presaccade) + 3*np.std(presaccade) #adaptive noise factor
+    sacoffthres = a*saconthres + b*noisefac
+    while sacoffthres < np.min(underthres):
+        a += 0.005
+        b += 0.005
+        sacoffthres = a*saconthres + b*noisefac
+    sacoffidx = np.where((underthres[1:] < sacoffthres) & (np.diff(underthres)<=0))[0][0] + offpeakidx
+    
+    glitw = 400 #glissade time window
+    if sacoffidx + glitw > len(velocitydata):
+        glitw = len(velocitydata) - glitw #if time window bigger than total eye trace length, it is set to the end point of the trace
+    else:
+        pass
+    
+    if True in (velocitydata[sacoffidx:sacoffidx+glitw] >= sacoffthres):
+       print("glissade detected RE.")
+       #Find the glissade offset
+       glipeakidx = np.where(velocitydata[sacoffidx:sacoffidx+glitw]>=sacoffthres)[0][-1] + sacoffidx
+       gliunderthres = velocitydata[glipeakidx:]
+       if len(gliunderthres) == 1:
+           sacoffidx = glipeakidx
+       else:
+           sacoffidx = np.where((gliunderthres[1:] < sacoffthres) & (np.diff(gliunderthres)<=0))[0][0] + glipeakidx    
+    return saconidx, sacoffidx
+
+
+#Fit function from Dai et al. 2016
+def saccade_fit_func(t, c, nu, tau, t_0, s_0):
+    """
+    Parametric fit function for saccade trace from Dai et al. 2016
+    
+    Parameters
+    ----------
+    t: 1-D array
+        The time array in ms
+    c: float
+        Model parameter
+    nu: float
+        Model parameter
+    tau: float
+        Model parameter
+    t_0: float
+        Model parameter
+    s_0: float
+        Model parameter
+        
+    Returns
+    -------
+    fitfunc: 1-D array
+        The fitted function to the saccade trace    
+    """
+    comp1 = c*saccade_fit_func_f(nu*(t-t_0)/c)
+    comp2 = -c*saccade_fit_func_f(nu*((t-t_0)-tau)/c)
+    fitfunc = comp1 + comp2 + s_0    
+    #if return_comps == True:
+    #    return fitfunc, comp1, comp2
+    #else:
+        #return fitfunc
+    return fitfunc
+
+
+def saccade_fit_func_f(t):
+    """
+    Part of the fit function to be used in the saccade fitting.
+    
+    Parameters
+    ----------
+    t: 1-D array
+        The time array
+    
+    Returns
+    -------
+    f: 1-D array
+        Ramp function used for saccade fitting
+    """
+    f = np.zeros(len(t))
+    f[t<=0] = 0.25*np.e**(2*t[t<=0])
+    f[t>=0] = t[t>=0] + 0.25*np.e**(-2*t[t>=0])
+    return f
+
+def linear_fit(x, a, b):
+    """
+    Function used for linear fit.
+    
+    Parameters
+    ----------
+    x: 1-D array
+        The data used for the linear fit
+    a: float
+        Slope of the fit curve
+    b: float
+        Offset of the fit curve
+    """
+    return a*x+b
