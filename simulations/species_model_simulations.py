@@ -58,7 +58,7 @@ for nfidx, nfilters in enumerate(nfiltersarray):
             rsl = 5
             rdot = 5*rsl
             print('zebrafish, centoff (x,y)=%.2f,%.2f, rsl=%i, rdot=%i'%(centoff[0],centoff[1], rsl, rdot))
-            img, circcent = hlp.circle_stimulus(rdot, rsl, *(180, 90)+centoff)    
+            img, circcent = hlp.circle_stimulus(rdot, rsl, *np.array((180, 90))+centoff)    
             _, fltcenters = hlp.florian_model_shuffle_parameters(nfilters, rsl, None, None, None, jsigma, img, \
                                                              params=zfparams)
             _, popact = hlp.florian_model_species_edition(img, rsl, zfparams, fltcenters[:,0], fltcenters[:,1])

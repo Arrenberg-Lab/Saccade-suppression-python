@@ -20,7 +20,6 @@ fps = 200 #number of frames per second
 shiftmag = 20 #magnitude of shift (horizontal) in degrees
 tdur = 70 #duration of shift in ms
 frametot = np.int(fps*tdur/1000) #total number of frames (excluding start position)
-totframes = np.int(fps*tdur/1000) #total number of frames (excluding the initial frame)
 elevrest = 5 #additional extension to elevation, so that smallest stimulus unit issue is less pronounced
 
 #make the stimulus coarser: in Giulia's matlab code, smallest unit in stimulus is 5x5 pixels, and resolution is 1.5 pix/deg. 
@@ -45,24 +44,27 @@ frames[:,:arenaaz*rsl,0] = finalstim[elevrest*rsl:(elevrest+2*arenaelev)*rsl, sh
 frames[:,arenaaz*rsl:,0] = frames[:,:arenaaz*rsl,0] 
 
 #preallocate shift frames
-shiftright = frames 
-shiftleft = frames
+shiftright = frames.copy()
+shiftleft = frames.copy()
 
-for i in range(totframes):
-    xintright = (np.array([shiftmag,arenaaz+shiftmag])*rsl + (i+1)*shiftperfr).astype(int) #shifted slice chosen from finalstim
-    xintleft = (np.array([shiftmag,arenaaz+shiftmag])*rsl - (i+1)*shiftperfr).astype(int)
+for i in range(frametot):
+    xintleft = (np.array([shiftmag,arenaaz+shiftmag])*rsl + (i+1)*shiftperfr).astype(int) #shifted slice chosen from finalstim
+    xintright = (np.array([shiftmag,arenaaz+shiftmag])*rsl - (i+1)*shiftperfr).astype(int)
+    #print(xintright,xintleft)
+    
     shiftright[:,:arenaaz*rsl,i+1] = finalstim[elevrest*rsl:(elevrest+2*arenaelev)*rsl, xintright[0]:xintright[1]]
     shiftleft[:,:arenaaz*rsl,i+1] = finalstim[elevrest*rsl:(elevrest+2*arenaelev)*rsl, xintleft[0]:xintleft[1]]
+    
     shiftright[:,arenaaz*rsl:,i+1] = shiftright[:,:arenaaz*rsl,i+1]
     shiftleft[:,arenaaz*rsl:,i+1] = shiftleft[:,:arenaaz*rsl,i+1]
 
 
 fig, ax = plt.subplots()
-plt.get_current_fig_manager().window.state('zoomed')
-ax.imshow(shiftright[:,:,0], extent=[-168,168,-40,40])
+plt.get_current_fig_manager().window.showMaximized()
+ax.imshow(shiftleft[:,:,0], extent=[-168,168,-40,40])
 plt.pause(0.5)
-for i in range(totframes):
-    ax.imshow(shiftright[:,:,i+1], extent=[-168,168,-40,40])
+for i in range(frametot):
+    ax.imshow(shiftleft[:,:,i+1], extent=[-168,168,-40,40])
     plt.pause(0.5)
                 
         

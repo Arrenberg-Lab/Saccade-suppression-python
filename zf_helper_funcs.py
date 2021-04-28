@@ -21,8 +21,9 @@ except ImportError:
         def decorator_jit(func):
             return func
         return decorator_jit
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage.filters import correlate1d
 from scipy.signal import savgol_filter
+from PIL import Image
 
 #Script for functions used in the saccadic suppression project
 
@@ -1190,7 +1191,7 @@ class generate_species_parameters:
         stimcenter /= rsl
         """
 
-def detect_saccades_v2(rawdata, smoothsigma=10, velthres=1000, accthres=100000, savgollength=51, savgolorder=4, rf=1000, a=0.05, b=0.05, velperc=90):
+def detect_saccades_v2(rawdata, smoothsigma=15, velthres=1000, accthres=100000, savgollength=51, savgolorder=4, rf=1000, a=0.05, b=0.05, velperc=90):
     """
     Improved saccade onset and offset detection algorithm adapted from Nyström & Holmqvist 2010
     
@@ -1228,7 +1229,13 @@ def detect_saccades_v2(rawdata, smoothsigma=10, velthres=1000, accthres=100000, 
     sacoffidx: integer
         The index of the saccade offset
     """
-    smoothdata = gaussian_filter1d(rawdata,smoothsigma)
+    radius = np.int(4 * smoothsigma**2 + 0.5)
+
+    x = np.arange(-radius, radius+1)
+    gausskern = np.exp(-0.5 / smoothsigma**2 * x ** 2)
+    gausskern[x<-10] = 0 #causal kernel, so for x<0 all values are zero
+    gausskern /= np.sum(gausskern)
+    smoothdata = correlate1d(rawdata, gausskern[::-1])
         
     velocitydata = np.abs(savgol_filter(smoothdata, savgollength, savgolorder, deriv=1) * rf) #filtered LE velocity in °/s
     #if the last velocity point in the data is extremely high, this likely indicates a recording artifact, so velocity is set to 0
@@ -1258,10 +1265,17 @@ def detect_saccades_v2(rawdata, smoothsigma=10, velthres=1000, accthres=100000, 
             thres = True
     
     #saccade onset detection: saccade onset velocity threshold is defined as mean+3*std for eye traces lower than peak threshold
-    underthres = velocitydata[0 : np.where(velocitydata>=sacvelthres)[0][0]]
+    uthresidx = np.where(velocitydata>=sacvelthres)[0][0] #index of first peak exceeding velocity threshold
+    if uthresidx == 0:
+        uthresidxs = np.where(velocitydata>=sacvelthres)[0] #indices of the datapoints over threshold
+        print('first index skipped')
+        #first datapoints likely to have some fluctuations, thus take the index which shows a difference bigger than 1 
+        #compared to previous index.
+        uthresidx = uthresidxs[np.where(np.diff(uthresidxs)>1)[0][0]+1] 
+    underthres = velocitydata[0 : uthresidx]
     onstd = 3
     saconthres = np.mean(underthres) + onstd*np.std(underthres)
-    saconidx = np.where((underthres[1:] < saconthres) & (np.diff(underthres)>=0))[0][-1] #index of first peak exceeding velocity threshold
+    saconidx = np.where((underthres[1:] < saconthres) & (np.diff(underthres)>=0))[0][-1] 
     
     
     #Saccade offset detection: choose the leftmost velocity peak and search forward from there to find wished saccade.
@@ -1273,30 +1287,44 @@ def detect_saccades_v2(rawdata, smoothsigma=10, velthres=1000, accthres=100000, 
     else:
         presaccade = velocitydata[saconidx-40:saconidx] #velocity curve before saccade onset
     
-    noisefac = np.mean(presaccade) + 3*np.std(presaccade) #adaptive noise factor
-    sacoffthres = a*saconthres + b*noisefac
-    while sacoffthres < np.min(underthres):
-        a += 0.005
-        b += 0.005
+    noisefacs = False
+    while noisefacs == False:
+        noisefac = np.mean(presaccade) + 3*np.std(presaccade) #adaptive noise factor
         sacoffthres = a*saconthres + b*noisefac
-    sacoffidx = np.where((underthres[1:] < sacoffthres) & (np.diff(underthres)<=0))[0][0] + offpeakidx
-    
-    glitw = 400 #glissade time window
-    if sacoffidx + glitw > len(velocitydata):
-        glitw = len(velocitydata) - glitw #if time window bigger than total eye trace length, it is set to the end point of the trace
-    else:
-        pass
-    
-    if True in (velocitydata[sacoffidx:sacoffidx+glitw] >= sacoffthres):
-       print("glissade detected RE.")
-       #Find the glissade offset
-       glipeakidx = np.where(velocitydata[sacoffidx:sacoffidx+glitw]>=sacoffthres)[0][-1] + sacoffidx
-       gliunderthres = velocitydata[glipeakidx:]
-       if len(gliunderthres) == 1:
-           sacoffidx = glipeakidx
-       else:
-           sacoffidx = np.where((gliunderthres[1:] < sacoffthres) & (np.diff(gliunderthres)<=0))[0][0] + glipeakidx    
-    return saconidx, sacoffidx
+        
+        while sacoffthres < np.min(underthres):
+            a += 0.005
+            b += 0.005
+            sacoffthres = a*saconthres + b*noisefac
+        sacoffidx = np.where((underthres[1:] < sacoffthres) & (np.diff(underthres)<=0))[0][0] + offpeakidx
+        
+        glitw = 400 #glissade time window
+        if sacoffidx + glitw > len(velocitydata):
+            glitw = len(velocitydata) - glitw #if time window bigger than total eye trace length, it is set to the end point of the trace
+        else:
+            pass
+        
+        if True in (velocitydata[sacoffidx:sacoffidx+glitw] >= sacoffthres):
+           print("glissade detected")
+           #Find the glissade offset
+           glipeakidx = np.where(velocitydata[sacoffidx:sacoffidx+glitw]>=sacoffthres)[0][-1] + sacoffidx
+           gliunderthres = velocitydata[glipeakidx:]
+           if len(np.where((gliunderthres[1:] < sacoffthres) & (np.diff(gliunderthres)<=0))[0]) > 0:
+               noisefacs = True
+            
+           else:
+               a += 0.005
+               b += 0.005
+               continue
+               
+           if len(gliunderthres) == 1:
+               sacoffidx = glipeakidx
+           else:
+               sacoffidx = np.where((gliunderthres[1:] < sacoffthres) & (np.diff(gliunderthres)<=0))[0][0] + glipeakidx    
+        else:
+            noisefacs = True
+            
+    return saconidx, sacoffidx, smoothdata
 
 
 #Fit function from Dai et al. 2016
@@ -1367,3 +1395,286 @@ def linear_fit(x, a, b):
         Offset of the fit curve
     """
     return a*x+b
+
+
+class cylindrical_random_pix_stimulus:
+    """
+    Drifting random pixel stimulus used in Giulia Soto's experiments. There are 2 functions. First one (__init) 
+    generates the image array, the second one returns the current stimulus for the given time. This approach is 
+    chosen for minimizing the RAM usage.
+    """
+    
+    def __init__(self, rsl, shiftmag, tdur, fps=200, arenaaz=168, maxelev=40):
+        """
+        Generate the stimulus image array
+
+        Parameters
+        ----------
+        arenaaz: float
+            Azimuth of the arena in degrees. Note that this value spans in both positive and negative.
+        maxelev: float
+            Maximum elevation of the cylindrical arena in degrees. Note that this value spans 
+            in both positive and negative.
+        rsl: float
+            Stimulus resolution in pixel per degrees.
+        shiftmag: float
+            Total amount of stimulus shift in degrees.
+        tdur: float
+            Duration of the stimulus shift in ms
+        fps: int
+            Number of frames per second
+            
+        Returns
+        -------
+        None.
+
+        """
+        #define initial parameters
+        self.arenaaz = arenaaz
+        self.maxelev = maxelev
+        self.rsl = rsl
+        self.shiftmag = shiftmag 
+        self.tdur = tdur
+        self.fps = fps
+        
+        #calculations about the cylinder parameters
+        self.maxz = self.maxelev #maximum z value (cylinder height). Note that z extends between +- this value.
+                                 #This value is set to the maximum elevation for implementation ease.
+        self.radius = self.maxz / np.tan(np.deg2rad(self.maxelev))
+        
+        #frame and stimulus timing calculations
+        self.frametot = np.int(fps*tdur/1000) #total number of frames (excluding start position)
+        self.shiftperfr = np.round(self.shiftmag/(tdur/1000)/fps*self.rsl) #shift size in pixels per frame
+        
+        #generate the stimulus array:
+        self.zrest = 5 #additional extension to z, so that smallest stimulus unit issue is less pronounced
+        #make the stimulus coarser: in Giulia's matlab code, smallest unit in stimulus is 5x5 pixels, and resolution is 1.5 pix/deg. 
+        #Thus, one side of the stimulus is 3.333 deg. 
+        stimunit = np.round(rsl*5/1.5).astype(int) #length of the stimulus unit in pixels (i.e. length of one pixel side)
+        #each stimulus unit should be stimunit*stimunit in size (cropping in visual field limits is allowed)
+        #total stimulus array : azimuth is extended +-20°, so that shifts in both to the left and to the right can be chosen. 
+        #rsl*elevrest pixels in elevation are additional
+        #Generate coarse grating
+        coarsegrating = np.random.rand(np.ceil((self.maxz*2+self.zrest)*rsl/stimunit).astype(int), \
+                                       np.ceil(np.int(arenaaz+2*self.shiftmag)*rsl/stimunit).astype(int)) < 0.5 
+        coarseimg = Image.fromarray(coarsegrating)
+        #resize the coarse grating to fit to the whole visual field
+        coarseimg = coarseimg.resize(np.flip(np.array(coarsegrating.shape)*stimunit), resample=Image.NEAREST)                               
+        #final stimulus array
+        self.finalstim = np.array(coarseimg)
+
+    
+    def move_stimulus(self, frameidx, shiftdir):
+        """
+        Get the current stimulus frame for the given frame index
+
+        Parameters
+        ----------
+        frameidx: int
+            Index of the current frame. This value is between 0 and self.frametot
+        shiftdir: str
+            Direction of shift, can be 'right' or 'left'.
+
+        Returns
+        -------
+        finalarr : 2-D array
+            Stimulus in current frame represented in whole visual field.
+
+        """
+        #ensure correct direction is specified.
+        dircorrect = False
+        while dircorrect == False:
+            if shiftdir == 'right':
+                dirfac = -1 #direction factor ensuring correct slice is taken for the directional shift
+                dircorrect = True    
+            elif shiftdir == 'left':
+                dirfac = 1
+                dircorrect = True
+            else:
+                shiftdir = input('Wrong shift direction given. Please write "right" or "left" \n')
+        
+        #start and stop indices for slicing the current frame from the big finalstim array
+        startidx, stopidx = (np.array([self.shiftmag,self.arenaaz+self.shiftmag])*self.rsl \
+                             + dirfac * frameidx*self.shiftperfr).astype(int)
+        
+        #preallocate current frame
+        currentframe = np.zeros([2*self.maxz*self.rsl,self.arenaaz*2*self.rsl])
+        #determine current frame (first half)
+        currentframe[:,:self.arenaaz*self.rsl] = \
+            self.finalstim[self.zrest*self.rsl:(self.zrest+2*self.maxz)*self.rsl, startidx:stopidx]
+        #copy the stimulus to the other cylindrical half
+        currentframe[:,self.arenaaz*self.rsl:] = currentframe[:,:self.arenaaz*self.rsl]
+        #extend the stimulus array to whole visual field.
+        finalarr = np.zeros(np.array([180,360])*self.rsl)
+        elidxs = self.rsl*np.array([np.int(90-self.maxelev), np.int(90+self.maxelev)]) #elevation indices for the stimulus
+        azidxs = self.rsl*np.array([np.int(180-self.arenaaz), np.int(180+self.arenaaz)]) #azimuth indices for the stimulus
+        finalarr[elidxs[0]:elidxs[1], azidxs[0]:azidxs[1]] = currentframe
+
+        return finalarr
+        
+
+class coordinate_transformations():
+    """
+    Class for functions to convert geographical coordinates to cartesian and vice versa
+    """
+    
+    def car2geo(x,y,z):
+        """
+        Convert cartesian coordinate system to geographical.
+                
+        Parameters
+        ----------
+        x : float/ 1-D array
+            x value in cartesian coordinates.
+        y : float/ 1-D array
+            y in cartesian coordinates.
+        z : float/ 1-D array
+            z in cartesian coordinates.
+
+        Returns
+        -------
+        r: float/ 1-D array
+            radius (distance from origin)
+        azimuth: float/ 1-D array
+            azimuth in deg (horizontal angle)
+        elevation: float/ 1-D array
+            elevation in deg (vertical angle)
+        """
+        r = np.sqrt(x**2 + y**2 + z**2)
+        elevation = np.arcsin(z / r)
+        azimuth = np.arctan2(y, x)
+        
+        return r, np.rad2deg(azimuth), np.rad2deg(elevation)
+    
+
+    def geo2car(r,azimuth,elevation):
+        """
+        Convert geographical coordinate system to cartesian.
+
+        Parameters
+        -------
+        r: float/ 1-D array
+            radius (distance from origin)
+        azimuth: float/ 1-D array
+            azimuth in deg (horizontal angle)
+        elevation: float/ 1-D array
+            elevation in deg (vertical angle)
+                
+        Returns
+        ----------
+        x : float/ 1-D array
+            x value in cartesian coordinates.
+        y : float/ 1-D array
+            y in cartesian coordinates.
+        z : float/ 1-D array
+            z in cartesian coordinates.    
+        """
+        azimuth = np.deg2rad(azimuth)
+        elevation = np.deg2rad(elevation)
+        x = r * np.cos(elevation) * np.cos(azimuth)
+        y = r * np.cos(elevation) * np.sin(azimuth)
+        z = r * np.sin(elevation)
+        
+        return x, y, z    
+    
+  
+def crop_rf_geographic(azidx, elevidx, radius, rsl, radiusfac=1):
+    """
+    Generate the receptive field mask for the given radius in geographical coordinates
+
+    Parameters
+    ----------
+    azidx: int
+        Index of the azimuth angle for given rsl
+    elevidx: int
+        Index of the elevation angle for given rsl
+    radius: float
+        Radius of the receptive field along elevation in degrees.
+    rsl: float
+        Image resolution in pixel per degrees.
+    radiusfac: float, optional
+        Factor determining the ratio between horizontal and vertical radius. The default is 1 leading to circle.
+        For now elliptic shape is not implemented.
+
+    Returns
+    -------
+    circarr: 2-D array
+        The receptive field mask array in geographical coordinates.
+    ccent: 1-D array
+        Receptive field center in geographic coordinates (azimuth, elevation) in degrees
+    ccentxyz: 1-D array
+        Receptive field center in cartesian coordinates
+    """
+    #generate the grids for geographical and cartesian coordinates
+    gaz, gel = np.meshgrid(np.linspace(-180,180,np.int(360*rsl)), np.linspace(90,-90,np.int(180*rsl))) 
+    r = np.ones(gaz.shape) #radius (sphere) constant 1
+    cx, cy, cz = coordinate_transformations.geo2car(r, gaz, gel)#cartesian coordinates
+
+    #circle center in geographical coordinates
+    ccent = np.array([gaz[elevidx,azidx], gel[elevidx,azidx]])
+    
+    #calculate the circle radius in cartesian coordinates
+    addidx = np.int(radius*rsl) #index to be added to elevation for defining the circle radius
+    if elevidx + addidx < gaz.shape[0]:
+        cedge = np.array([gaz[elevidx,azidx], gel[elevidx+addidx,azidx]]) #circle edge offset in elevation
+    else:
+        cedge = np.array([gaz[elevidx,azidx], gel[elevidx-addidx,azidx]]) #circle edge offset in elevation
+    
+    #RF center in cartesian
+    ccentx = cx[(gaz == ccent[0]) & (gel == ccent[1])]
+    ccenty = cy[(gaz == ccent[0]) & (gel == ccent[1])]
+    ccentz = cz[(gaz == ccent[0]) & (gel == ccent[1])]
+    #edge in cartesian
+    cedgex = cx[(gaz == cedge[0]) & (gel == cedge[1])]
+    cedgey = cy[(gaz == cedge[0]) & (gel == cedge[1])]
+    cedgez = cz[(gaz == cedge[0]) & (gel == cedge[1])]
+
+    #circle radius in cartesian
+    crc = np.sqrt((ccentx-cedgex)**2 + (ccenty-cedgey)**2 + (ccentz-cedgez)**2) #along y direction
+    #crcx = radiusfac*crc
+    
+    #circle crop mask (ELLIPSE TO BE IMPLEMENTED LATER...)
+    circarr = ((cx-ccentx))**2 + ((cy-ccenty))**2 + ((cz-ccentz))**2 <= crc**2
+    return circarr, ccent, np.squeeze(np.array([ccentx, ccenty, ccentz]))
+
+
+def generate_RF_geographic(sf, sz, ph, azidx, elevidx, rsl, radiusfac=1):
+    """
+    Generate the receptive field in geographic coordinates
+
+    Parameters
+    ----------
+    sf: float
+        RF spatial frequency in cyc/deg.
+    sz: float
+        RF radius in deg.
+    ph: float
+        Gabor phase offset in deg.
+    azidx: int
+        RF center azimuth index.
+    elevidx: int
+        RF center elevation index.
+    rsl: float
+        Image resolution in pix/deg.
+    radiusfac: float, optional
+        Ratio factor between horizontal and vertical radii. The default is 1. Cylindrical shape not yet implemented
+
+    Returns
+    -------
+    filterimg: 2-D array
+        Gabor RF array in geographical coordinates.
+    rfcentcar: 1-D array
+        The center of the receptive field in cartesian coordinates, order is x,y,z.
+    """
+    #Generate RF mask
+    maskparams = [azidx, elevidx, sz, rsl, radiusfac]
+    rfarr, rfcent, rfcentcar = crop_rf_geographic(*maskparams)
+    
+    #Generate first the rectangular Gabor in geographical coordinates
+    degrees = np.linspace(0,360, 360*rsl)
+    gaborsin = np.sin(2*np.pi * sf * degrees - rfcent[0] + ph)
+    filterimg = np.tile(gaborsin,[180*rsl,1])
+    
+
+    filterimg[rfarr==False] = 0
+    return filterimg, rfcentcar
