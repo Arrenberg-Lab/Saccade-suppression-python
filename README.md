@@ -1,16 +1,19 @@
-# Saccade-suppression-python
+## Python code for estimating sensory and motor noise in zebrafish and macaque in saccadic behavior
 
-## Ibrahim Tunc Lab rotation project 'A basic model of image shift detection across species'
-Aim of this project is to generate a model, which predicts species specific sensory noise in the eye position estimate. The predicted sensory noise is then aimed to be used to generate species-specific predictions in saccadic suppression using the Crevecoeur model.
+# Ibrahim Tunc
+
+Aim of this project is to estimate species-specific sensory and motor noise parameters during saccadic behavior according to the Crevecoeur model (Crevecoeur Kording 2017).
 
 ### Structure
 In the following, the content of each of the subfolder is explained:
 
 ### /data
-This folder contains the figures (PDF) and model simulation files, along with the macaque superior colliculus anatomical data from Chen et al. 2019.
+This folder contains the figures (PDF) and model simulation files, along with the macaque superior colliculus anatomical data from Chen et al. 2019 and macaque saccade data from Hafed Lab.
 
 ### /development_scripts
 The scripts in this folder are used for test purposes and/or developing the main scripts, and can be completely ignored.
+
+
 
 ### /modelling
 The scripts in this folder are used to generate and test the shift decoder models of different variants. There are two model variants. gabor_population.py includes the model where the visual field is regularly tiled into patches, and each patch contains the same set of filters with different size, spatial frequency and phase. The second model variant can be found in population_activity_shift_decoder.py, where the receptive field position is randomized for each Gabor-like unit, and each unit has random parameters chosen from a specific parameter distribution. population_activity_image_reconstruction is still under development.
