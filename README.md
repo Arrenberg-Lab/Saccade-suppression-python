@@ -13,6 +13,8 @@ Function extract_saccade_data from zf_helper_funcs automatically extracts all th
 #### 2) macaque dataset
 The macaque dataset is a .mat file and can be found in /data/Hafed_dataset/example_saccades.mat. The file contains a time array (mytime), and arrays (nsaccades x ntime) for horizontal as well as vertical components of the saccades in different directions (up/down + left/right). The preprocessing and loading of the dataset is achieved in the script macaque_saccade_detection.py. Metadata and readme for the dataset can further be found in the .mat file.
 
+#### 3) simulation results
+The raw data of the simulations (RF arrays, RF activity arrays, visual field etc.) are saved as numpy arrays (.npy/.npz). Processed data (model decoding error etc.) are saved as pandas dataframe files, with each entry having unique values about the simulation settings (animal type, number of RFs, stimulus shift magnitude etc.).
 
 ### Structure
 In the following, the content of each of the subfolder is explained:
