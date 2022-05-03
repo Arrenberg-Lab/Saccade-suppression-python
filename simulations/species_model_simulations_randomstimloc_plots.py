@@ -13,9 +13,19 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
 import matplotlib.ticker as ticker
-loadpath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data\simulations'
+loadpath = r'../data/simulations'
 from scipy.stats import ttest_1samp
 
+#make legend size bigger (as of 04.08.2021)
+figdict = {'axes.titlesize' : 35,
+           'axes.labelsize' : 35,
+           'xtick.labelsize' : 35,
+           'ytick.labelsize' : 35,
+           'legend.fontsize' : 35,
+           'figure.titlesize' : 40,
+           'image.cmap' : 'gray',
+           'axes.formatter.limits' : [-7, 7]}
+plt.style.use(figdict)
 
 #THERE WAS AN UNEXPECTED BUG IN THE DECODING ALGORITHM. FOR NOW ONLY POOL THE STIMULI SHIFTED SMALLER THAN 90°
 #IN AZIMUTH 
@@ -102,7 +112,9 @@ fig.suptitle('Stimulus position decoding error (shift<90°)')
 ax.set_ylabel('Decoding error [$\circ$]')
 ax.set_xlabel('Number of units', labelpad=10)
 ax.legend([vp1['bodies'][0],vp2['bodies'][0]], ['Zebrafish', 'Macaque'])
-plt.subplots_adjust(left=0.057, bottom=0.13, right=0.99, top=0.88, wspace=0.06, hspace=0.2)
+plt.get_current_fig_manager().window.showMaximized()
+plt.pause(0.1)
+plt.tight_layout()
 
 #2) Stimulus shift decoding error
 #This is easy now since you only have horizontal shifts. So real shift is given already. For decoded shift do the 
@@ -189,6 +201,7 @@ labeldat = [[zfdat[i], macdat[i]] for i in range(len(zfdat))]
 labeldat = [b for a in labeldat for b in a]
 ax.set_xticks(np.arange(0,6,2)+0.5)
 ax.set_xticklabels(np.unique(zebrafish['Number of filters']))
+ax.plot(ax.get_xlim(), [0,0], 'k-', linewidth=0.8)
 
 for i in range(len(zfdat)):
     ax.text(0+i*2,59, '(%i)'%(len(zfdat[i])), size=15, horizontalalignment='center')
@@ -198,8 +211,9 @@ fig.suptitle('Stimulus shift decoding error (shift<90°)')
 ax.set_ylabel('Decoding error [$\circ$]')
 ax.set_xlabel('Number of units')
 ax.legend([vp1['bodies'][0],vp2['bodies'][0]], ['Zebrafish', 'Macaque'], loc='lower right')
-plt.subplots_adjust(left=0.067, bottom=0.13, right=0.99, top=0.88, wspace=0.06, hspace=0.2)
-
+plt.get_current_fig_manager().window.showMaximized()
+plt.pause(0.1)
+plt.tight_layout()
 
 #Square plots
 fig, axs = plt.subplots(2,3, sharex=True, sharey=True)

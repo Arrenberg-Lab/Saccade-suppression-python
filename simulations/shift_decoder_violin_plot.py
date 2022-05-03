@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
-loadpath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data\simulations'
+loadpath = r'../data/simulations'
 
 #percentile to plot datapoints as outliers
 pcutoff = [1, 99] #%1 percent and 99% as cutoff

@@ -12,9 +12,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
-savepath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data\simulations'
+savepath = r'../data/simulations'
 
 #Species specific model simulations
+simulate = True #if False, this script can be used to generate the figures for parameter distributions used in the model.
 
 #For now do only macaque and zebrafish, keep reading literature to get more info.
 #Update: also negative shifts, and calculate shifts between the stimulus in center.
@@ -48,6 +49,8 @@ for nfidx, nfilters in enumerate(nfiltersarray):
         #Automatically generate the parameters random for each species     
         zfparams = speciesparams.zebrafish()
         macparams = speciesparams.macaque()
+        if simulate == False:
+            break
         for nc, centoff in enumerate(centoffs):
             #shuffle stimulus position in accordance with the average distance between Gabor units.
             fltdist = 90 / np.sqrt(nfilters/2) #in degrees
@@ -85,19 +88,20 @@ for nfidx, nfilters in enumerate(nfiltersarray):
             decodedcenters[1,nfidx,nc,nidx,:] = stimcentermac            
 
 #Save the results
-ddict = {'Species': np.repeat(['Zebrafish', 'Macaque'],np.product(realcenters.shape)/4),
-         'Number of filters': np.tile(np.repeat(nfiltersarray, len(centoffs)*nsimul),2), 
-         'Real center X' : realcenters[:,:,:,:,0].flatten(),
-         'Real center Y' : realcenters[:,:,:,:,1].flatten(),
-         'Decoded center X' : decodedcenters[:,:,:,:,0].flatten(),
-         'Decoded center Y' : decodedcenters[:,:,:,:,1].flatten(),
-         'Simulation number' : np.tile(np.tile(np.arange(1,nsimul+1),len(centoffs)*len(nfiltersarray)),2)
-        }
-
-simuldf = pd.DataFrame.from_dict(ddict)
-filename = r'\zf_mac_simul_nsimul=%s_rsl_mac=%i_rsl_zf=5_rdot=%i_jsigma=%i_nfilters=%s_centoffs=%s' \
-           %(nsimul, rsl, rdot/rsl, jsigma, nfiltersarray, centoffs)
-simuldf.to_csv(savepath+filename)
+if simulate == True:
+    ddict = {'Species': np.repeat(['Zebrafish', 'Macaque'],np.product(realcenters.shape)/4),
+             'Number of filters': np.tile(np.repeat(nfiltersarray, len(centoffs)*nsimul),2), 
+             'Real center X' : realcenters[:,:,:,:,0].flatten(),
+             'Real center Y' : realcenters[:,:,:,:,1].flatten(),
+             'Decoded center X' : decodedcenters[:,:,:,:,0].flatten(),
+             'Decoded center Y' : decodedcenters[:,:,:,:,1].flatten(),
+             'Simulation number' : np.tile(np.tile(np.arange(1,nsimul+1),len(centoffs)*len(nfiltersarray)),2)
+            }
+    
+    simuldf = pd.DataFrame.from_dict(ddict)
+    filename = r'\zf_mac_simul_nsimul=%s_rsl_mac=%i_rsl_zf=5_rdot=%i_jsigma=%i_nfilters=%s_centoffs=%s' \
+               %(nsimul, rsl, rdot/rsl, jsigma, nfiltersarray, centoffs)
+    simuldf.to_csv(savepath+filename)
 
 
 #Plot one exemplary parameter histogram for zf and mac each
@@ -126,3 +130,5 @@ axs[1,0].set_xlabel('Spatial frequency [cyc/°]')
 axs[1,1].set_xlabel('RF diameter [°]')
 fig.text(0.5, 0.87, 'Zebrafish', size=25, horizontalalignment='center')
 fig.text(0.5, 0.45, 'Macaque', size=25, horizontalalignment='center')
+plt.get_current_fig_manager().window.showMaximized()
+fig.subplots_adjust(top=0.83, bottom=0.11, left=0.055, right=0.98, hspace=0.235, wspace=0.135)

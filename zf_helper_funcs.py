@@ -24,6 +24,9 @@ except ImportError:
 from scipy.ndimage.filters import correlate1d
 from scipy.signal import savgol_filter
 from PIL import Image
+from scipy.stats import multivariate_normal
+from scipy.optimize import curve_fit
+from IPython import embed
 
 #Script for functions used in the saccadic suppression project
 
@@ -700,7 +703,7 @@ def circle_stimulus(rdot, rsl, dxcent=None, dycent=None):
     return img, np.array([dxcent, dycent])
 
 
-def florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, img, params=None):
+def florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, img, params=None, macaque=False):
     """
     The function to get the random shuffled parameter combinations from a given parameter pool
     
@@ -723,7 +726,8 @@ def florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, im
     params: 2-D array or None
         If None, this variable is not considered. If this array is not None, then the parameter triplet combinations
         are not generated, since this variable contains all model parameters for each Gabor unit.
-    
+    macaque: boolean, optional
+        If True, azimuth is limited to +-90°.
     Returns
     -------
     parameters: 2-D array
@@ -732,6 +736,14 @@ def florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, im
     fltcenters: 2-D array
         The array containing the x and y coordinates of the Gabor filter centers.
     """
+    if macaque == True:        
+        xend = 180
+        mfac = 1 #multiplication factor for azimuth (i.e. azimuth/elevation ratio)
+        #mfac is used to determine the number of possible x and y centers as well as the distance between each
+        #center before jitter.
+    else:
+        xend = 360
+        mfac = 2
     if params == None:
         parametertriplets = [(i,j,k) for i in gfsf for j in gfsz for k in gfph] #order is sf sz ph
         randomidxs = np.random.randint(0, len(parametertriplets), nfilters)
@@ -741,10 +753,10 @@ def florian_model_shuffle_parameters(nfilters, rsl, gfsf, gfsz, gfph, jsigma, im
         parameters = params
     #tile the image then jitter the locations
     #take the center of each patch (x y pixel values)
-    xcenters = np.linspace(0, 360, 2*np.sqrt(nfilters/2).astype(int), endpoint=False) +\
-                                                                                  90/np.sqrt(nfilters/2).astype(int)
-    ycenters = np.linspace(0, 180, np.sqrt(nfilters/2).astype(int), endpoint=False) +\
-                                                                                  90/np.sqrt(nfilters/2).astype(int)
+    xcenters = np.linspace(0, xend, mfac*np.sqrt(nfilters/mfac).astype(int), endpoint=False) +\
+                                                                                  90/np.sqrt(nfilters/mfac).astype(int)
+    ycenters = np.linspace(0, 180, np.sqrt(nfilters/mfac).astype(int), endpoint=False) +\
+                                                                                  90/np.sqrt(nfilters/mfac).astype(int)
     xcenters *= rsl #convert to pixels
     ycenters *= rsl
     
@@ -1079,6 +1091,7 @@ def florian_model_population_activity_img_reconstruction(filtersarray, fltcenter
 class generate_species_parameters:
     """
     Generate model parameters for different species
+    !AS OF 16.08 => Further constraints will be imposed to the sampling, that RF size determines the sf distribution of the RF set
     
     Species so far:
     ---------------
@@ -1104,7 +1117,7 @@ class generate_species_parameters:
         for idx, sf in enumerate(macsfs):
             #sample for each probability interval from uniform distribution the appropriate number of units.
             if idx == len(macsfs)-1:    
-                sfpar = np.random.uniform(sf-2, sf, np.ceil(self.nfilters*macsfprobs[idx]).astype(int))
+                sfpar = np.random.uniform(sf-2, sf, np.ceil(self.nfilters*macsfprobs[idx]).astype(int)) #last intervl between 8-10  
             else:
                 sfpar = np.random.uniform(sf, macsfs[idx+1], np.ceil(self.nfilters*macsfprobs[idx]).astype(int))
             macsfparams.append(list(sfpar))
@@ -1141,15 +1154,76 @@ class generate_species_parameters:
         stimcenter = popact/np.sum(popact) @ fltcenters
         stimcenter /= rsl
         """
+   
+    
+    def macaque_updated(self):
+        """
+        Sample parameters of the receptive field sets for macaque (updated version).
 
-       
+        Updated version of the macaque() function. This function chooses the RF diameter values based on the given spatial frequency
+        selectivity.
+
+        Returns
+        -------
+        macparameters : 2-D nested list
+            Nested list containing macaque parameters for the given number of units. First dimension is number of units, second 
+            dimension includes the parameters spatial frequency (sf), Rf diameter (sz) and RF phase (ph) in the respective order.
+        """
+        
+        #For macaque choose first the spatial frequency, then based on that initiate the size parameter since you choose
+        #size in macaque based on some uniform distribution (which is the fancy way of saying you have no idea about the 
+        #distribution but some upper and lower size limits.)
+        
+        #choose first sf parameter:
+        macsfs = np.array([0.5, 1.1, 2.2, 4.4, 10])
+        macsfprobs = np.array([45, 30, 10, 20, 2]) / np.sum(np.array([45, 30, 10, 20, 2]))
+        macsfparams = []
+        for idx, sf in enumerate(macsfs):
+            #sample for each probability interval from uniform distribution the appropriate number of units.
+            if idx == len(macsfs)-1:    
+                sfpar = np.random.uniform(sf-2, sf, np.ceil(self.nfilters*macsfprobs[idx]).astype(int)) #last intervl between 8-10  
+            else:
+                sfpar = np.random.uniform(sf, macsfs[idx+1], np.ceil(self.nfilters*macsfprobs[idx]).astype(int))
+            macsfparams.append(list(sfpar))
+        macsfparams = np.array([a for b in macsfparams for a in b])
+        #take out random values to match nfilters
+        macsfremoveidx = np.random.randint(0, len(macsfparams)-1, len(macsfparams)-self.nfilters)
+        macsfparams = np.delete(macsfparams, macsfremoveidx)
+        #shuffle the parameters.
+        random.shuffle(macsfparams)
+        
+        #choose for each sf the size range and sample uniformly from there
+        macszparams = np.zeros(self.nfilters)
+        #loop over each sf to choose a RF diameter for the limited upper/lower limits:
+        for idx, sf in enumerate(macsfparams):
+            #determine upper and lower boundaries for macaque RF size: Derivation in page 8 of Ibrahim's train of thougths notebook
+            smin = 1/(2*sf)
+            smax = 1/sf
+            sz = np.random.uniform(smin, smax, 1)
+            #print('smin=%.2f, smax=%.2f, sz=%.2f, sf=%.2f, sz_crit=%.2f' %(smin, smax, sz, sf, np.sqrt(2)/sf))
+            #print('any value smaller than sz_crit turns into DoG')
+            #SZ crit is TOO BIG for some reason
+            macszparams[idx] = sz 
+            #check if gaussian or DoG
+                   
+        #Finally the phase: simply sample nfilter times from the gfph
+        macphparams = np.random.uniform(0, 360, self.nfilters)
+        macparameters = [[macsfparams[i], macszparams[i], macphparams[i]] for i in range(self.nfilters)]
+        return macparameters
+    
+    
     def zebrafish(self, sfdist='logunif'):
+        """
+        WARNING: This function is decepreated, and is here only for possible reproduction purposes for the simulations from my
+        lab rotation. Please use zebrafish_updated() instead if you are sampling for the Gaussian or DoG RF profiles.
+        """
+        
         """
         SF:
         Only info I found was upper resolution limit is 1° so
         max SF is 1 cyc/° (Sajovic & Levinthal 1982) so I guess sample uniformly between 0-1
         !UPDATE: As of 21.02.2021 the spatial frequencies are log normal distributed, so any simulations after this
-        date differ in zebrafish DF distribution.
+        date differ in zebrafish SF distribution.
         """
         if sfdist == 'logunif':
             zfsfparams = reciprocal(0.000001,1).rvs(self.nfilters)
@@ -1164,7 +1238,8 @@ class generate_species_parameters:
         Preuss et al. 2014: 2-8 diameter 40%, 16-64 diameter 43°
         Sajovic and Levinthal 1982 73% 34x24.9, 18% 38.6x28.2, 8% 35.6x25.4
         Use Wang et al. 2020 since that data is the most informative. Calculate the areas and estimate the diameter assuming
-        circular RF shape (obviously wrong but an acceptable simplification.)
+        circular RF shape (obviously wrong but an acceptable simplification.) 
+        THIS IS DIAMETER!!!! (Ibo from future got confused)
         """
         #zfszs = np.sqrt(np.array([30*13,90*39,168*80])/np.pi)*2 #use to check diameter calculation.
         zfszparams = []
@@ -1190,10 +1265,87 @@ class generate_species_parameters:
         stimcenter = popact/np.sum(popact) @ fltcenters
         stimcenter /= rsl
         """
+       
+        
+    def zebrafish_updated(self, sfdist='logunif'):
+        """
+        Sample parameters of the receptive field sets for zebrafish (updated version).
+        
+        The novelty of this function is receptive field size constrains the spatial frequency selectivity range 
+        for the receptive field.
 
-def detect_saccades_v2(rawdata, smoothsigma=15, velthres=1000, accthres=100000, savgollength=51, savgolorder=4, rf=1000, a=0.05, b=0.05, velperc=90):
+        Parameters
+        ----------
+        sfdist : str, optional
+            Type of the spatial frequency distribution. Can be uniform ('unif') or reciprocal ('logunif'). 
+            The default is 'logunif'.
+
+        Returns
+        -------
+        zfparameters : 2-D nested list
+            List of RF parameters. Shape nfilters*3, 2nd dimension has the parameters in the order sf,sz,ph.
+            
+        """
+        fl = 0.05 #1/180° chosen by Ari -> AS OF NOW THOSE VALUES ARE NOT NECESSARILY USED!
+        fu = 0.25 #from Haug et al. 2010
+        if sfdist == 'logunif':
+            zfsfparams = reciprocal(fl,fu).rvs(self.nfilters)
+        elif sfdist == 'unif':
+            zfsfparams = np.random.uniform(fl,fu, self.nfilters) 
+        
+        #sample the size parameters (see function zebrafish() for literature details.)
+        #UPDATE: Wang et al. is modified, additional 10% will be uniform betweem 3-22.2837°
+        zfszparams = []
+        zfszparams.append(np.random.uniform(22.2837, 66.8511, np.ceil(self.nfilters*0.81).astype(int)))
+        zfszparams.append(np.random.uniform(66.8511, 130.8141, np.ceil(self.nfilters*0.09).astype(int)))
+        zfszparams.append(np.random.uniform(3, 22.2837, np.ceil(self.nfilters*0.10).astype(int)))
+        zfszparams = [a for b in zfszparams for a in b]
+        if len(zfszparams) > self.nfilters:
+            zfszremoveidx = np.random.randint(0, len(zfszparams)-1, len(zfszparams)-self.nfilters) 
+            zfszparams = np.delete(zfszparams, zfszremoveidx)
+        random.shuffle(zfszparams)
+        
+        """
+        Novelty of this function: spatial frequency is sampled with a set of rules based on the size of the RF:
+        * The preferred stimulus can maximally have wavelength 2*diameter, so that the whole positive part of the wave fits to the 
+        * The wavelength of the preferred stimulus can be minimum the length of the diameter, so that whole positive part of the 
+        stimulus at least covers 1/4 of the whole receptive field area.
+        =>This means 2r<=lambda<=4r i.e. 1/(2r) >= sf >= 1/(4r) i.e. 1/sz >= sf >= 1/(2sz)
+        
+        To achieve this sampling, a subsample between fmin and fmax (minimum and maximum of sf) is chosen from the sf distribution.
+        """
+        #zebrafish sf distribution (from literature)
+        #zfsfdist = np.random.uniform(0.05,0.25, self.nfilters)
+        #zfsfparams = np.zeros(self.nfilters)
+        #loop over each size value and choose randomly the sf from the subsample determined by upper and lower limits of sf.
+        for idx, sz in enumerate(zfszparams):
+            #find the upper&lower limits of sf:
+                fmin = 1/(2*sz)
+                fmax = 1/sz
+                #print(fmin,fmax)
+                #sfsubset = set(zfsfdist[(fmin<=zfsfdist) & (zfsfdist<=fmax)])
+                #sample the frequency selectivity
+                #if minimum is outside of the frequency range set it back to the frequency range
+                #if fmin < fl:
+                    #fmin = fl
+                #if fmax > fu:
+                    #fmax = fu
+                #print(fmin,fmax)
+                fsmp = np.random.uniform(fmin, fmax, 1)
+                zfsfparams[idx] = fsmp
+                                    
+        #Finally the phase: simply sample nfilter times from the gfph
+        zfphparams = np.random.uniform(0, 360, self.nfilters)
+        
+        #Pack all the parameters together i.e. spatial frequency, size, phase in this order
+        zfparameters = [[zfsfparams[i], zfszparams[i], zfphparams[i]] for i in range(self.nfilters)]
+        return zfparameters
+        
+
+def detect_saccades_v2(rawdata, smoothsigma=15, velthres=1000, accthres=100000, savgollength=51, savgolorder=4, 
+                       rf=1000, a=0.05, b=0.05, velperc=90, onstd=3, macaque=False):
     """
-    Improved saccade onset and offset detection algorithm adapted from Nyström & Holmqvist 2010
+    Improved saccade onset and offset detection algorithm adapted from Nyström & Holmqvist 2010.
     
     Parameters
     ----------
@@ -1222,6 +1374,11 @@ def detect_saccades_v2(rawdata, smoothsigma=15, velthres=1000, accthres=100000, 
         optional variable is used to specify the saccade onset index manually when needed.
     velperc: float, optional
         Percentile for the saccade velocity threshold. Can be between 0 and 100.
+    onstd: float
+        Standard deviation value used during saccade onset estimation.
+    macaque: boolean, optional
+        If True, no Gaussian smoothing is done since it is not necessary for macaque.
+    
     Returns
     -------
     saconidx: integer
@@ -1229,13 +1386,17 @@ def detect_saccades_v2(rawdata, smoothsigma=15, velthres=1000, accthres=100000, 
     sacoffidx: integer
         The index of the saccade offset
     """
-    radius = np.int(4 * smoothsigma**2 + 0.5)
-
-    x = np.arange(-radius, radius+1)
-    gausskern = np.exp(-0.5 / smoothsigma**2 * x ** 2)
-    gausskern[x<-10] = 0 #causal kernel, so for x<0 all values are zero
-    gausskern /= np.sum(gausskern)
-    smoothdata = correlate1d(rawdata, gausskern[::-1])
+    if macaque == True:
+        smoothdata = rawdata #no data smoothing with Gaussian if macaque saccades are used 
+    
+    else:
+        radius = np.int(4 * smoothsigma**2 + 0.5)
+    
+        x = np.arange(-radius, radius+1)
+        gausskern = np.exp(-0.5 / smoothsigma**2 * x ** 2)
+        gausskern[x<-10] = 0 #causal kernel, so for x<0 all values are zero
+        gausskern /= np.sum(gausskern)
+        smoothdata = correlate1d(rawdata, gausskern[::-1])
         
     velocitydata = np.abs(savgol_filter(smoothdata, savgollength, savgolorder, deriv=1) * rf) #filtered LE velocity in °/s
     #if the last velocity point in the data is extremely high, this likely indicates a recording artifact, so velocity is set to 0
@@ -1273,10 +1434,8 @@ def detect_saccades_v2(rawdata, smoothsigma=15, velthres=1000, accthres=100000, 
         #compared to previous index.
         uthresidx = uthresidxs[np.where(np.diff(uthresidxs)>1)[0][0]+1] 
     underthres = velocitydata[0 : uthresidx]
-    onstd = 3
     saconthres = np.mean(underthres) + onstd*np.std(underthres)
     saconidx = np.where((underthres[1:] < saconthres) & (np.diff(underthres)>=0))[0][-1] 
-    
     
     #Saccade offset detection: choose the leftmost velocity peak and search forward from there to find wished saccade.
     offpeakidx = np.where(velocitydata>=sacvelthres)[0][-1]
@@ -1325,6 +1484,17 @@ def detect_saccades_v2(rawdata, smoothsigma=15, velthres=1000, accthres=100000, 
             noisefacs = True
             
     return saconidx, sacoffidx, smoothdata
+
+
+def detect_saccades_macaque():
+    """
+    Slightly adjusted version of the function detect_saccades_v2 for macaque saccade detection. Gaussian smoothing is
+    eliminated, Savitzky Golay filter order is set to 3 with a length of 11 (ms), a and b variables are set to 0.5 as
+    default.
+    
+    For parameters and returns see the function detect_saccades_v2.
+    """
+    
 
 
 #Fit function from Dai et al. 2016
@@ -1381,6 +1551,7 @@ def saccade_fit_func_f(t):
     f[t>=0] = t[t>=0] + 0.25*np.e**(-2*t[t>=0])
     return f
 
+
 def linear_fit(x, a, b):
     """
     Function used for linear fit.
@@ -1395,6 +1566,248 @@ def linear_fit(x, a, b):
         Offset of the fit curve
     """
     return a*x+b
+
+
+def macaque_xi_estimation(sacarr, onset, offset):
+    """
+    Estimate the additive motor noise xi (without motor command u)
+
+    Parameters
+    ----------
+    sacarr : 2-D array
+        Saccade array. Shape ntrials * time
+    onset : 1-D array
+        Array of onset indices for each trial.
+    offset : 1-D array
+        Array of offset indices for each trial.
+
+    Returns
+    -------
+    xi : 1-D array
+        Motor error for each time trace in all saccade trials.
+    prenum : int
+        Number of used presaccadic traces.
+    postnum : int
+        Number of used postsaccadic traces.
+    xisvals : tuple
+        The standard deviation parameters calculated in different methods. See function calculate_s_xi.        
+    """
+    xi = [] 
+    prenum = 0 #number of presaccadic traces used in the analysis
+    postnum = 0 #number of postsaccadic traces used in the analysis
+    for idx in range(sacarr.shape[0]):
+        presaccade = sacarr[idx, :onset[idx]]#discard 5 ms from beginning and end of presaccadic fixation
+        postsaccade = sacarr[idx, offset[idx]:] #dicard again
+    
+        if len(presaccade) < 20: #if less than 20 ms available for presaccade, discard the presaccadic curve from analysis
+            None        
+        else:
+            prenum += 1
+            presaccade = sacarr[idx, 5:onset[idx]-5]#discard 5 ms from beginning and end of presaccadic fixation
+            xpre = np.arange(0,len(presaccade))
+            preparams, _ = curve_fit(linear_fit, xpre, presaccade)
+            prefit = linear_fit(xpre, *preparams)
+            xi.append(presaccade-prefit)
+            #print(presaccade-prefit)
+        if len(postsaccade) < 20: #same story
+            None
+        else:
+            postnum += 1
+            postsaccade = sacarr[idx, offset[idx]+5:-5] #discard again
+            xpost = np.arange(0,len(postsaccade))
+            postparams, _ = curve_fit(linear_fit, xpost, postsaccade)
+            postfit = linear_fit(xpost, *postparams)
+            xi.append(postsaccade-postfit)
+    xi = np.array([a for b in xi for a in b])
+    xisvals = calculate_s_xi(xi)
+    return xi, prenum, postnum, xisvals
+
+
+def calculate_s_xi(xi):
+    """
+    Calculate s_xi with different ways
+
+    Parameters
+    ----------
+    xi : 1-D array
+        The additive noise array.
+
+    Returns
+    -------
+    s_xiraw : float
+        Standard deviation of xi without removing any outliers.
+    s_xifiltered : float
+        Standard deviation of xi with removing outliers. Outliers defined as data points outside 1.5 IQR.
+    s_xipercentiled : float
+        Standard deviation of xi with removing outliers. Outliers defined as data points above 99th percentile.
+    """
+    #find outliers
+    xiiqr = np.percentile(xi,75)-np.percentile(xi,25)
+    xifiltered = xi[(xi>np.median(xi)-1.5*xiiqr) & (xi<np.median(xi)+1.5*xiiqr)]
+    s_xiraw = np.std(xi) 
+    #outliers as 1.5 IQR
+    s_xifiltered = np.std(xifiltered)
+    #outliers as above 99th percentile (probably this is the safest way to go)
+    s_xipercentiled = np.std(xi[(xi<np.percentile(xi, 99.5)) & (xi>np.percentile(xi, 0.5))]) 
+    return s_xiraw, s_xifiltered, s_xipercentiled
+
+
+def macaque_eps_estimation(sacarr, xi, onset, offset, ucutoff= 0.01, RMSfac=0.5, onsrem = 5, offsrem=150, fplot=False, nplot=False):
+    """
+    Estimate multiplicative motor noise epsilon (saccadic, during the presence of motor command)
+
+    Parameters
+    ----------
+    sacarr : 2-D array
+        Saccade array. Shape ntrials * time
+    xi : 1-D array
+        The additive noise array.
+    onset : 1-D array
+        Array of onset indices for each trial.
+    offset : 1-D array
+        Array of offset indices for each trial.
+    ucutoff : float, optional
+        Cutoff value for the command input. The default is 0.01.
+    RMSfac : float, optional
+        RMS factor used to exclude bad fitting saccades. In the saccade fit RMS distribution, if a saccade
+        fir error exceeds this value, it is excluded from further analysis of epsilon estimation.
+        The default is 0.5.
+    onsrem : int, optional
+        The index until which the saccade onset will be discarded. The default is 5.
+    offsrem : int, optional
+        The index until from which on the saccade offset will be discarded. The default is 150.
+    fplot : boolean, optional
+        If True, fit and noise parameter plots are generated for each saccade. The default is False.
+    nplot : boolean, optional
+        If True, nice saccades with their respective fit functions are shown. The default is False.
+
+    Returns
+    -------
+    ul : 1-D array
+        Command input array.
+    epsl : 1-D array
+        Multiplicative noise array. This array is synched with ul
+    s_eps : float
+        Estimated standard deviation of epsilon.
+
+    """
+    
+    #Motor noise 2: epsilon -> trace during saccade
+    #u is temporal derivative of the saccadic trace template, epsilon is calculated as s_eps = sqrt(var_tot-var_xi)/u.
+    #Template from Dai et al. 2016
+    #choose nice saccades -> ones fitting the template well, use RMS to quantify this.
+    
+    #preallocation
+    nl = []
+    ul = []
+    RMSs = np.zeros(sacarr.shape[0])
+    fittedsacs = []
+    varxi = np.var(xi)
+
+    #do the fitting
+    for idx in range(sacarr.shape[0]):
+        if offset[idx]-offsrem <= onset[idx]+onsrem or onset[idx]+onsrem >= offset[idx]-offsrem:
+            print('Saccade too short for removing %.0f ms from beginning and %.0f from end. This saccade is skipped' \
+                      %(onsrem,offsrem))
+            continue            
+        
+        saccade = sacarr[idx, onset[idx]+onsrem:offset[idx]-offsrem]
+        
+        if len(saccade) == 0:
+            print('Saccade length is zero!')
+            continue
+        t = np.arange(0, len(saccade))
+        fitparams, _ = curve_fit(saccade_fit_func, t, saccade, method='lm', maxfev=100000)
+        fittedsac = saccade_fit_func(t, *fitparams)
+        totnoise = (saccade-fittedsac)
+        utemp = np.abs(np.diff(fittedsac)) #template u
+        #eps = np.sqrt(totnoise-varxi)[1:] / utemp
+        nl.append(totnoise)
+        ul.append(utemp)
+        RMSs[idx] = np.sqrt(np.mean(totnoise))
+        fittedsacs.append(fittedsac)
+        print(idx)
+        
+        #see how fitting looks like
+        if fplot == True:
+            fig, axs = plt.subplots(1,3)
+            axs[0].plot(saccade, 'k-', label='trace')
+            axs[0].plot(fittedsac, 'r-', label='fit')
+            axs[0].legend()
+            axs[0].set_title('Saccade')
+            axs[1].plot(totnoise, 'k.', label=r'$y_{t} - y_{f}$')
+            axs[1].plot([0, len(totnoise)], [varxi, varxi], 'r-', label=r'$s_\xi$')
+            axs[1].legend()
+            axs[1].set_title('Noises')
+            axs[2].plot(utemp, 'k.')
+            axs[2].set_title(r'$u$')
+            plt.get_current_fig_manager().window.showMaximized()
+        
+            while True:
+                if plt.waitforbuttonpress():
+                    plt.close('all')
+                    break
+            a = input('c to continue, q to quit \n')
+            if a == 'c':
+                kill = False
+            elif a == 'q':
+                kill = True
+            if kill == True:
+                return None, None, None
+                
+            
+    #visual inspection to "nice" saccades
+    rmsidx = ~np.isnan(RMSs)
+    nicesacidxs = np.where(RMSs<=np.mean(RMSs[rmsidx])-RMSfac*np.std(RMSs[rmsidx]))[0]
+    if nplot == True:
+        print(len(nicesacidxs), np.mean(RMSs)-RMSfac*np.std(RMSs))
+        for idx in nicesacidxs:
+            print(idx, nicesacidxs, RMSs[idx])
+            fig, ax = plt.subplots(1,1)
+            ax.plot(sacarr[idx, onset[idx]+onsrem:offset[idx]-offsrem], label='raw trace')
+            ax.plot(fittedsacs[idx], label='template')
+            ax.set_xlabel('Time [ms]')
+            ax.set_ylabel('Eye position [°]')
+            plt.legend()
+            plt.get_current_fig_manager().window.showMaximized()
+            plt.pause(0.1)
+            while True:
+                if plt.waitforbuttonpress():
+                    plt.close('all')
+                    break
+                a = input('c to continue, q to quit \n')
+            if a == 'c':
+                kill = False
+            elif a == 'q':
+                kill = True
+            if kill == True:
+                return None, None, None
+    
+    nl = np.array(nl)
+    nl = np.array([a for b in nl[nicesacidxs] for a in b])
+    ul = np.array(ul)
+    ul = np.array([a for b in ul[nicesacidxs] for a in b])
+    
+    #bin u values and epsilon values
+    ubins = np.linspace(np.min(ul), np.max(ul), 50)
+    binnedu = [[] for a in range(len(ubins))]
+    binnedn = [[] for a in range(len(ubins))]
+    
+    #sort u and eps into bins
+    for idx, u in enumerate(ul):
+        ubin = np.where(ubins<=u)[0][-1]
+        binnedu[ubin].append(u)
+        binnedn[ubin].append(nl[idx])
+    
+    #find average s_eps per bin and then average over all
+    stdnperbin = np.array([np.std(a) for a in binnedn]) #standard deviation of total noise
+    idxs = (ubins>ucutoff) & (stdnperbin>0) & (~np.isnan(stdnperbin))
+    stdnperbin = stdnperbin[idxs]
+    ubins = ubins[idxs]
+    s_epss = 1/np.abs(ubins)*np.sqrt(stdnperbin**2 - varxi)
+    s_eps = np.mean(s_epss[~np.isnan(s_epss)]) 
+
+    return s_eps, ubins, s_epss, nl, stdnperbin
 
 
 class cylindrical_random_pix_stimulus:
@@ -1416,14 +1829,14 @@ class cylindrical_random_pix_stimulus:
             Maximum elevation of the cylindrical arena in degrees. Note that this value spans 
             in both positive and negative.
         rsl: float
-            Stimulus resolution in pixel per degrees.
+            Stimulus resolution in pixel per degrees (along azimuth). 
         shiftmag: float
             Total amount of stimulus shift in degrees.
         tdur: float
             Duration of the stimulus shift in ms
         fps: int
             Number of frames per second
-            
+
         Returns
         -------
         None.
@@ -1438,31 +1851,73 @@ class cylindrical_random_pix_stimulus:
         self.fps = fps
         
         #calculations about the cylinder parameters
-        self.maxz = self.maxelev #maximum z value (cylinder height). Note that z extends between +- this value.
-                                 #This value is set to the maximum elevation for implementation ease.
-        self.radius = self.maxz / np.tan(np.deg2rad(self.maxelev))
+        self.radius = 1
+        
+        self.maxz = np.sin(np.deg2rad(self.maxelev)) #maximum z value (cylinder height). 
+                                                     #Note that z extends between +- this value.
         
         #frame and stimulus timing calculations
         self.frametot = np.int(fps*tdur/1000) #total number of frames (excluding start position)
         self.shiftperfr = np.round(self.shiftmag/(tdur/1000)/fps*self.rsl) #shift size in pixels per frame
         
+        self.zpixrest = 5*rsl #additional extension to z, so that smallest stimulus unit issue is less pronounced, i.e. add 5*rsl
+                         #more pixels to z extent
+        
         #generate the stimulus array:
-        self.zrest = 5 #additional extension to z, so that smallest stimulus unit issue is less pronounced
+        self.elevarray = np.linspace(-self.maxelev, self.maxelev, np.int(2*self.maxelev*rsl)) #corresponding array for z values in the given resolution
+        pixz = 2*self.maxz / len(self.elevarray) #size of a single pixel along z axis of the cylinder in degrees
+        #this array is used as dummy, the actual values in this array are not of importance, it is just used to fit the 
+        #stimulus array shape to the extended value of maxz + pixrest, and then to accordingly trim the array to the correct
+        #size spanning between +- maxz
+        self.zarray = np.linspace(-(self.maxz+pixz*self.zpixrest), self.maxz+pixz*self.zpixrest, 
+                                                                          len(self.elevarray) + 2*self.zpixrest)
+                
         #make the stimulus coarser: in Giulia's matlab code, smallest unit in stimulus is 5x5 pixels, and resolution is 1.5 pix/deg. 
         #Thus, one side of the stimulus is 3.333 deg. 
         stimunit = np.round(rsl*5/1.5).astype(int) #length of the stimulus unit in pixels (i.e. length of one pixel side)
         #each stimulus unit should be stimunit*stimunit in size (cropping in visual field limits is allowed)
         #total stimulus array : azimuth is extended +-20°, so that shifts in both to the left and to the right can be chosen. 
         #rsl*elevrest pixels in elevation are additional
-        #Generate coarse grating
-        coarsegrating = np.random.rand(np.ceil((self.maxz*2+self.zrest)*rsl/stimunit).astype(int), \
+        #Generate coarse grating 
+        coarsegrating = np.random.rand(np.ceil((len(self.zarray)+self.zpixrest)/stimunit).astype(int), \
                                        np.ceil(np.int(arenaaz+2*self.shiftmag)*rsl/stimunit).astype(int)) < 0.5 
         coarseimg = Image.fromarray(coarsegrating)
         #resize the coarse grating to fit to the whole visual field
         coarseimg = coarseimg.resize(np.flip(np.array(coarsegrating.shape)*stimunit), resample=Image.NEAREST)                               
         #final stimulus array
         self.finalstim = np.array(coarseimg)
+        zstartcoarseimg = self.finalstim.shape[0]-len(self.zarray) #start index for finalstim so that it has the same shape as 
+                                                                   #zarray along first axis
+        self.finalstim = self.finalstim[zstartcoarseimg:, :]
+        self.test = False #if test_stimulus is run, this is set to true, thus this is used for case control
+        
+    def test_stimulus(self, barwidth, spbar):
+        """
+        Test stimulus which consists of a single bar along the whole elevation in the visual field. When called, this function
+        updates self.finalstim.
 
+        Parameters
+        ----------
+        barwidth : float
+            Width of the bar in degrees.
+        spbar : float
+            Start azimuth angle of the bar in degrees.
+
+        Returns
+        -------
+        None.
+
+        """
+        #calculate the width of the bar in pixels
+        self.bwp = np.int(barwidth * self.rsl)
+        #start position of the bar in pixels
+        self.spbar = np.int((spbar+180)*self.rsl) 
+        #generate the bar stimulus for the given width
+        self.bar = np.ones([self.finalstim.shape[0]-2*self.zpixrest, self.bwp])
+        #rest will be done in move_stimulus function.
+        self.test = True
+        return
+    
     
     def move_stimulus(self, frameidx, shiftdir):
         """
@@ -1478,8 +1933,11 @@ class cylindrical_random_pix_stimulus:
         Returns
         -------
         finalarr : 2-D array
-            Stimulus in current frame represented in whole visual field.
-
+            Stimulus in current frame represented in whole visual field. Note for test stimulus this is uncut version of 
+            the bar
+        stimarr : 2-D array
+            Stimulus in current frame represented in whole visual field. Note for test stimulus this is correct stimulus
+            array
         """
         #ensure correct direction is specified.
         dircorrect = False
@@ -1493,30 +1951,83 @@ class cylindrical_random_pix_stimulus:
             else:
                 shiftdir = input('Wrong shift direction given. Please write "right" or "left" \n')
         
-        #start and stop indices for slicing the current frame from the big finalstim array
-        startidx, stopidx = (np.array([self.shiftmag,self.arenaaz+self.shiftmag])*self.rsl \
-                             + dirfac * frameidx*self.shiftperfr).astype(int)
+        if self.test == False: 
+            #start and stop indices for slicing the current frame from the big finalstim array
+            startidx, stopidx = (np.array([self.shiftmag,self.arenaaz+self.shiftmag])*self.rsl \
+                                 + dirfac * frameidx*self.shiftperfr).astype(int)
+            if frameidx == self.frametot:
+                #if we are at the last frame, do some corrections in the shift which arise due to rounding errors
+                print('%.1f° error in the intended vs real stimulus shift' %((self.shiftperfr/self.rsl*self.frametot)-self.shiftmag))
+                #update the start and stop indices after finding how many pixels are wrong
+                pixerr = np.int(self.shiftmag*self.rsl - self.shiftperfr*self.frametot)
+                startidx -= pixerr               
+                stopidx -= pixerr
+            #preallocate current frame
+            currentframe = np.zeros([self.finalstim.shape[0]-2*self.zpixrest,self.arenaaz*2*self.rsl])
+            #determine current frame (first half)
+            currentframe[:,:self.arenaaz*self.rsl] = \
+                self.finalstim[self.zpixrest:len(self.zarray)-self.zpixrest, startidx:stopidx]
+            #copy the stimulus to the other cylindrical half
+            currentframe[:,self.arenaaz*self.rsl:] = currentframe[:,:self.arenaaz*self.rsl]
         
-        #preallocate current frame
-        currentframe = np.zeros([2*self.maxz*self.rsl,self.arenaaz*2*self.rsl])
-        #determine current frame (first half)
-        currentframe[:,:self.arenaaz*self.rsl] = \
-            self.finalstim[self.zrest*self.rsl:(self.zrest+2*self.maxz)*self.rsl, startidx:stopidx]
-        #copy the stimulus to the other cylindrical half
-        currentframe[:,self.arenaaz*self.rsl:] = currentframe[:,:self.arenaaz*self.rsl]
+        else:
+            currentframe = np.zeros([self.finalstim.shape[0]-2*self.zpixrest,360*self.rsl]) #whole azimuth
+            #set the bar to the correct location for the given frame
+            #-dirfac is used since in the real stimulus case (no test random flicker) slice is taken from self.finalstim.
+            #On the other hand in test stimulus the indices are shifted, which is why opposite dirfac sign is required here.
+            #When taking slice shifting the slice window to the left causes a rightward shift in stimulus, while when indices
+            #are shifted around a rightward shift of a start index causes also a rightward shift of the stimulus.
+            startidx = (self.spbar - dirfac * frameidx*self.shiftperfr).astype(int) 
+            if frameidx == self.frametot:
+                #if we are at the last frame, do some corrections in the shift which arise due to rounding errors
+                print('%.1f° error in the intended vs real stimulus shift' %((self.shiftperfr/self.rsl*self.frametot)-self.shiftmag))
+                #update the start and stop indices after finding how many pixels are wrong
+                pixerr = np.int(self.shiftmag*self.rsl - self.shiftperfr*self.frametot)
+                startidx += pixerr
+            stopidx = startidx+self.bwp
+            currentframe[:, startidx:stopidx] = self.bar            
+        #convert the current frame to geographical coordinates 
+        #(i.e. project points on the cylinder to a closest sphere surface)
+        #define the geographical coordinate array, elevation is defined in the init function (self.elevarray)
+        azarray = np.linspace(-180, 180, 360*self.rsl) #azimuth array
+        az, el = np.meshgrid(azarray, self.elevarray) #index arrays for azimuth and elevation
+        zvals = np.linspace(-self.maxz, self.maxz, len(self.elevarray)) #z values
+        zelvals = np.rad2deg(np.arcsin(zvals)) #elevation angle (degrees!) for the z array. see geocyl.jpg where ß is elevation.
+        finalarr = np.zeros(currentframe.shape) #final array in the extent of az and el arrays
+        #for each elevation value, find the corresponding z and fill in finalarr accordingly
+        for idx in range(len(self.elevarray)):
+            elval = self.elevarray[idx] #elevation array for the given line along azimuth
+            pixidx = np.where(elval<=zelvals)[0]
+            if len(pixidx) == 0:
+                pixidx = idx
+            else:
+                pixidx = pixidx[0]
+            finalarr[idx, :] = currentframe[pixidx, :]
+        
+        #embed the finalarr to the whole visual field
+        stimarr = np.zeros(np.array([180,360])*self.rsl) #spans the whole visual field
+
+        if self.test == False:            
+            elevdif = self.rsl * (90 - self.maxelev) #the amount of empty pixels along elevation in the visual field
+            azdif = self.rsl * (180-self.arenaaz) #amount of empty pixels along azimuth
+            stimarr[np.int(elevdif) : np.int(stimarr.shape[0]-elevdif), 
+                    np.int(azdif) : np.int(stimarr.shape[1]-azdif)] = finalarr
+        else:
+            elevdif = self.rsl * (90 - self.maxelev) #the amount of empty pixels along elevation in the visual field
+            stimarr[np.int(elevdif) : np.int(stimarr.shape[0]-elevdif), :] = finalarr
+                        
+        """
         #extend the stimulus array to whole visual field.
         finalarr = np.zeros(np.array([180,360])*self.rsl)
         elidxs = self.rsl*np.array([np.int(90-self.maxelev), np.int(90+self.maxelev)]) #elevation indices for the stimulus
         azidxs = self.rsl*np.array([np.int(180-self.arenaaz), np.int(180+self.arenaaz)]) #azimuth indices for the stimulus
         finalarr[elidxs[0]:elidxs[1], azidxs[0]:azidxs[1]] = currentframe
-
-        return finalarr
+        """
+        return stimarr, currentframe, finalarr
         
 
 class coordinate_transformations():
-    """
-    Class for functions to convert geographical coordinates to cartesian and vice versa
-    """
+    """Class for functions to convert geographical coordinates to cartesian and vice versa."""
     
     def car2geo(x,y,z):
         """
@@ -1552,7 +2063,7 @@ class coordinate_transformations():
         Convert geographical coordinate system to cartesian.
 
         Parameters
-        -------
+        ----------
         r: float/ 1-D array
             radius (distance from origin)
         azimuth: float/ 1-D array
@@ -1561,7 +2072,7 @@ class coordinate_transformations():
             elevation in deg (vertical angle)
                 
         Returns
-        ----------
+        -------
         x : float/ 1-D array
             x value in cartesian coordinates.
         y : float/ 1-D array
@@ -1575,12 +2086,12 @@ class coordinate_transformations():
         y = r * np.cos(elevation) * np.sin(azimuth)
         z = r * np.sin(elevation)
         
-        return x, y, z    
-    
-  
-def crop_rf_geographic(azidx, elevidx, radius, rsl, radiusfac=1):
+        return x, y, z            
+
+
+def crop_rf_geographic(azidx, elevidx, degex, rsl, radiusfac=1):
     """
-    Generate the receptive field mask for the given radius in geographical coordinates
+    Generate the receptive field mask for the given radius in geographical coordinates.
 
     Parameters
     ----------
@@ -1588,8 +2099,8 @@ def crop_rf_geographic(azidx, elevidx, radius, rsl, radiusfac=1):
         Index of the azimuth angle for given rsl
     elevidx: int
         Index of the elevation angle for given rsl
-    radius: float
-        Radius of the receptive field along elevation in degrees.
+    degex: float
+        Extent of the receptive field radius in degrees. This corresponds to the diameter of the RF in degrees.
     rsl: float
         Image resolution in pixel per degrees.
     radiusfac: float, optional
@@ -1613,34 +2124,24 @@ def crop_rf_geographic(azidx, elevidx, radius, rsl, radiusfac=1):
     #circle center in geographical coordinates
     ccent = np.array([gaz[elevidx,azidx], gel[elevidx,azidx]])
     
-    #calculate the circle radius in cartesian coordinates
-    addidx = np.int(radius*rsl) #index to be added to elevation for defining the circle radius
-    if elevidx + addidx < gaz.shape[0]:
-        cedge = np.array([gaz[elevidx,azidx], gel[elevidx+addidx,azidx]]) #circle edge offset in elevation
-    else:
-        cedge = np.array([gaz[elevidx,azidx], gel[elevidx-addidx,azidx]]) #circle edge offset in elevation
-    
+    #receptive field circle radius: see separate PDF page 1 and 2 (FD20210518meetingIbrahim.pdf) 
+    #This was wrong equation so see the jpeg file (calculate_RF_circ_radius.jpg)
+    cdc = np.sin(np.deg2rad(degex/2)) * 2 #circle diameter in cartesian. 19.08 update it was radius before i.e. before the RFs 
+                                          #were double in radius. 
+   
     #RF center in cartesian
     ccentx = cx[(gaz == ccent[0]) & (gel == ccent[1])]
     ccenty = cy[(gaz == ccent[0]) & (gel == ccent[1])]
     ccentz = cz[(gaz == ccent[0]) & (gel == ccent[1])]
-    #edge in cartesian
-    cedgex = cx[(gaz == cedge[0]) & (gel == cedge[1])]
-    cedgey = cy[(gaz == cedge[0]) & (gel == cedge[1])]
-    cedgez = cz[(gaz == cedge[0]) & (gel == cedge[1])]
-
-    #circle radius in cartesian
-    crc = np.sqrt((ccentx-cedgex)**2 + (ccenty-cedgey)**2 + (ccentz-cedgez)**2) #along y direction
-    #crcx = radiusfac*crc
-    
+        
     #circle crop mask (ELLIPSE TO BE IMPLEMENTED LATER...)
-    circarr = ((cx-ccentx))**2 + ((cy-ccenty))**2 + ((cz-ccentz))**2 <= crc**2
+    circarr = ((cx-ccentx))**2 + ((cy-ccenty))**2 + ((cz-ccentz))**2 <= (cdc/2)**2 #19.08 divide diameter by 2 to get to the radius
     return circarr, ccent, np.squeeze(np.array([ccentx, ccenty, ccentz]))
 
 
 def generate_RF_geographic(sf, sz, ph, azidx, elevidx, rsl, radiusfac=1):
     """
-    Generate the receptive field in geographic coordinates
+    Generate the receptive field in geographic coordinates (Gabor shape).
 
     Parameters
     ----------
@@ -1675,6 +2176,200 @@ def generate_RF_geographic(sf, sz, ph, azidx, elevidx, rsl, radiusfac=1):
     gaborsin = np.sin(2*np.pi * sf * degrees - rfcent[0] + ph)
     filterimg = np.tile(gaborsin,[180*rsl,1])
     
-
     filterimg[rfarr==False] = 0
     return filterimg, rfcentcar
+
+
+def gaussian_rf_geog(sf, sz, azidx, elevidx, rsl, radiusfac=1, verbose=False):
+    """
+    Generate Difference of Gaussian (DoG) or Gaussian profile for the receptive field.
+
+    Parameters
+    ----------
+    sf : float
+        Spatial frequency selectivity of the unit in degrees. 
+        This determines the standard deviation of the center Gaussian, 1/(4*sf) is the center Gauss standard deviation.
+    sz : float
+        Diameter of the unit in degrees. This determines the surround Gauss standard deviation, which is sz/5
+    azidx : int
+        Receptive field center azimuth position index.
+    elevidx : int
+        Receptive field center elevation position index.
+    rsl : float
+        Resolution in pixel per degrees. azidx and elevidx are divided by this value
+    radiusfac : float, optional
+        May be used in future to implement elliptic shape. For now this parameter has no role. The default is 1.
+    verbose : boolean, optional.
+        If True, detailed stuff are printed (debugging purposes). Default is False.
+    Returns
+    -------
+    filterimg : 2-D array
+        Image matrix of the filter array.
+    rfcentcar : 1-D array
+        Cartesian coordinates of the receptive field center (x,y,z in this order).
+
+    """
+    #Generate RF mask
+    maskparams = [azidx, elevidx, sz, rsl, radiusfac]
+    rfarr, rfcent, rfcentcar = crop_rf_geographic(*maskparams)
+    
+    #Generate first the Gaussian in the whole visual field
+    gaz, gel = np.meshgrid(np.linspace(-180,180,np.int(360*rsl)), np.linspace(90,-90,np.int(180*rsl))) 
+    #visual field in cartesian
+    x, y, z = coordinate_transformations.geo2car(np.ones(gaz.shape), gaz, gel)
+    #determine Gauss center, which is shifted in azimuth by as much as ph.
+    #gauss center indices in geographic
+    gcent = np.array([gaz[elevidx,azidx], gel[elevidx,azidx]])
+    #gauss centers in cartesian
+    gcentx = x[(gaz == gcent[0]) & (gel == gcent[1])]
+    gcenty = y[(gaz == gcent[0]) & (gel == gcent[1])]
+    gcentz = z[(gaz == gcent[0]) & (gel == gcent[1])]
+    gcentcar = np.squeeze(np.array([gcentx, gcenty, gcentz]))
+    
+    #you will need to rewrite this code (19.08) -> develop the code first in DoG_generate_rfs_test
+    
+    #DoG
+    #if sf < 1/(np.sqrt(2)*sz):
+        #stdsur = sz/2
+        #More will come here!
+        
+    #else:
+    #convert the sf to corresponding gaussian 
+    wl = 1/sf #spatial frequency wavelength in degrees
+    stdg = wl/6 #set the standard deviation to wl/4, this is in degrees.
+    if stdg > 180:
+        """
+        if the standard deviation is bigger than 180°, the equation for stdcar does not properly work
+        This is because sin(90) <= sin(90+n) for any n, meaning that a bigger angle than 180 leads to a yet smaller 
+        (and in cases even to a negative!) standard deviation value. In this case, first find out how many full 180°s fit
+        in the stdg (using // operator) and multiply the sine value by that. Then find the remainder and add it to stdcar
+        using the sin equation.
+        """
+        numreps = (stdg//180) #floor division to find how many times the biggest value is added
+        remainder = stdg - 180*numreps #remaining part to be added
+        stdcar = (np.sin(np.deg2rad(180/2)) * 2) * numreps + (np.sin(np.deg2rad(remainder/2)) * 2)
+    
+    else:
+        stdcar = np.sin(np.deg2rad(stdg/2)) * 2 #standard deviation in cartesian
+    
+    """
+    Idea behind stdcar: Imagine 3D Gaussian on a sphere surface in its contour plots: each contour is a ring around the 
+    sphere surface. One of these circles correspond to the deviation from center as much as one standard deviation.
+    The radius of that circle equals to the standard deviation of the Gaussian, but we know its vaule in degrees in
+    geographical coordinates. Thus, we can reduce this problem to the same problem we had, namely converting the radius
+    of circle (projected on a sphere surface) in degrees from geographical coordinates to cartesian coordinates. 
+    """
+    pos = np.dstack((x,y,z)) #generate the array containing each point's xyz coordinates. 
+                             #1st dim along azimuth, 2nd along elevation and last dim xyz (in that order)
+                             
+    rv = multivariate_normal(gcentcar ,np.diag(np.tile(stdcar,3))**2)
+    center = rv.pdf(pos)
+    center[rfarr==False] = 0
+    center /= np.sum(center)     
+    gaussfield = center
+    
+    #Try with the DoG approach now - The lookup table is not yet completely finished, so leave it for a while.
+    """
+    1st possibility:
+        For the spatial frequency selectivity, we want the surround to cover the whole negative parts of the wavelength.
+    2nd possibility:
+        Center Gauss sigma determines spatial frequency selectivity. For surround, set sigma to 1/5 of the radius
+    """
+    """
+    #1st possibility
+    stdgsur = 3*stdg #surround standard deviation should cover 3/4 of the wavelength.
+    """
+    """
+    #2nd possibility
+    stdgsur = sz/5 #5 std covers the whole RF surround        
+    stdcarsur = np.sin(np.deg2rad(stdgsur/2)) * 2 #standard deviation in cartesian
+    print('stdcar : %.5f, stdcarsur : %.5f' %(stdcar, stdcarsur))
+    #print(stdg)
+    
+    if stdcar > stdcarsur: 
+        #use only center Gaussian if sf selectivity imposes a wider center gaussian than surround 
+        #(this happens when wavelength of sf is bigger than filter size i.e. wl/4 > sz/5)
+        #since then there is simply no space for surround for this given receptive field
+        print('Center Gaussian is wider, thus DoG is switched to Gaussian.')
+        gaussfield = center
+        print('center sum : %.6f' %(np.sum(center)))
+    else:
+        surround = multivariate_normal(gcentcar ,np.diag(np.tile(stdcarsur,3))**2).pdf(pos)
+        surround[rfarr==False] = 0
+        surround /= np.sum(surround)
+        
+        gaussfield = center-surround
+        print('center sum : %.6f , surround sum : %.6f , DoG sum : %.6f' 
+          %(np.sum(center),np.sum(surround),np.sum(gaussfield)))
+    """
+    filterimg = gaussfield.copy()
+    filterimg[rfarr==False] = 0
+    if verbose == True:
+        print('RF sum : %.6f' 
+              %(np.sum(filterimg)))
+    return filterimg, rfcentcar
+    
+
+def macaque_saccade_convert_eye_position(horizontal, vertical):
+    """
+    Convert horizontal and vertical eye angle positions to a single angle relative to visual field center 
+    (0° azimuth and elevation). The function returns the angle value 
+    between the vectors |viewer position -> visual field center| and |viewer position -> given eye position|.
+
+    Parameters
+    ----------
+    horizontal : 2-D array
+        Horizontal eye position in degrees. Shape ntrial * time
+    vertical : 2-D array
+        Vertical eye position in degrees.
+
+    Returns
+    -------
+    dang : 2-D array
+        Eye position angle relative to origin.
+
+    """
+    
+    """
+    First, convert horizontal and vertical angles to a single angle relative to visual field center (0,0)
+    since the eye positions are in angles, you can use spherical visual field, convert it to cartesian, find the 
+    respective distances required and finally re-convert all values to a single angle per time point per trial.
+    """
+    #set horizontal and vertical start positions to 0 (averaged over first 10 ms)
+    horizontal -= np.tile(np.mean(horizontal[:,:10], axis=1), (horizontal.shape[1],1)).T
+    vertical -= np.tile(np.mean(vertical[:,:10], axis=1), (vertical.shape[1],1)).T
+    
+    #convert eye position to cartesian coordinates
+    x,y,z = coordinate_transformations.geo2car(np.ones(horizontal.shape), horizontal, vertical)    
+    #origin in cartesian coordinates
+    xor, yor, zor = coordinate_transformations.geo2car(1,0,0)
+    #distance between visual field origin and datapoints:
+    dist = np.sqrt((x-xor)**2+(y-yor)**2+(z-zor)**2)
+    #convert distance to angle, #while keeping the angle signs in mind
+    dang = 2*np.rad2deg(np.arcsin(dist/2)) #* np.sign((x-xor)+(y-yor)+(z-zor))
+    #set presaccadic eye position to 0 (averaged over 10 ms)
+    dang -= np.tile(np.mean(dang[:,:10], axis=1), (dang.shape[1],1)).T
+    return dang
+    
+
+def gauss(x,mu,sigma,amp):
+    """
+    Gaussian curve.
+
+    Parameters
+    ----------
+    x : 1-D array
+        Array over which Gaussian is calculated.
+    mu : float
+        Mean
+    sigma : float
+        Standard deviation.
+
+    Returns
+    -------
+    1-D array
+        Gaussian curve.
+
+    """
+    dx = np.diff(x)[0]
+    return amp/(sigma*np.sqrt(2*np.pi))*np.exp(-0.5*((x-mu)/sigma)**2)*dx

@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
-savepath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data\simulations'
+savepath = r'../data/simulations'
 
 #Run the model many times for each image shift values, generate a violin plot for the decoder error distribution
 #initial image values

@@ -406,14 +406,20 @@ for idx, trace in enumerate(tracestn):
 _, overp = mannwhitneyu(overshootstn, overshootsnt) 
 #the distributions differ significantly, so xi should be calculated separately
 
+#for the noise estimate, you need to keep in mind we are dealing with discrete time steps, making the process
+#a random walk. Therefore you need to scale the noise according to the time step: 7
+#https://www.softcover.io/read/bf34ea25/math_for_finance/random_walks
+
+dt = 1# for now set to 1 0.001 #sampling frequency is 1000 Hz (Giulia data) therefore dt is 1 ms = 0.001 s
+
 #Motor noise 1: xi -> fit a linear curve to nonsaccadic traces, find the deviation from the fit and calculate s_xi
 #nasal->temporal
 xint = [] #xi nasal to temporal
 prenumnt = 0 #number of presaccadic traces used in the analysis
 postnumnt = 0 #number of postsaccadic traces used in the analysis
 for idx, trace in enumerate(tracesnt):
-    presaccade = trace[:onsetnt[idx]]#discard 5 ms from beginning and end of presaccadic fixation
-    postsaccade = trace[offsetnt[idx]:] #dicard again
+    presaccade = trace[:onsetnt[idx]]
+    postsaccade = trace[offsetnt[idx]:]
 
     if len(presaccade) < 20: #if less than 20 ms available for presaccade, discard the presaccadic curve from analysis
         None        
@@ -423,7 +429,10 @@ for idx, trace in enumerate(tracesnt):
         xpre = np.arange(0,len(presaccade))
         preparams, _ = curve_fit(hlp.linear_fit, xpre, presaccade)
         prefit = hlp.linear_fit(xpre, *preparams)
-        xint.append((presaccade-prefit)**2)
+        xint.append((presaccade-prefit)/np.sqrt(dt)) #AS OF 28.06 RMS is left out, noise is simply template minus raw data
+                                                     #and is scaled by the time step of the sampling (i.e. sampling freq).
+                                                     #See also Florian's slack post on motor noise estimation from 24.06.
+                                                     
     if len(postsaccade) < 20: #same story
         None
     else:
@@ -432,9 +441,8 @@ for idx, trace in enumerate(tracesnt):
         xpost = np.arange(0,len(postsaccade))
         postparams, _ = curve_fit(hlp.linear_fit, xpost, postsaccade)
         postfit = hlp.linear_fit(xpost, *postparams)
-        xint.append((postsaccade-postfit)**2)
+        xint.append((postsaccade-postfit)/np.sqrt(dt))
     
-
 xint = np.array([a for b in xint for a in b])
 #find outliers
 xintiqr = np.percentile(xint,75)-np.percentile(xint,25)
@@ -462,7 +470,7 @@ for idx, trace in enumerate(tracestn):
         xpre = np.arange(0,len(presaccade))
         preparams, _ = curve_fit(hlp.linear_fit, xpre, presaccade)
         prefit = hlp.linear_fit(xpre, *preparams)
-        xitn.append((presaccade-prefit)**2)
+        xitn.append((prefit-presaccade)/np.sqrt(dt))
     if len(postsaccade) < 20: #same story
         None
     else:
@@ -471,9 +479,8 @@ for idx, trace in enumerate(tracestn):
         xpost = np.arange(0,len(postsaccade))
         postparams, _ = curve_fit(hlp.linear_fit, xpost, postsaccade)
         postfit = hlp.linear_fit(xpost, *postparams)
-        xitn.append((postsaccade-postfit)**2)
+        xitn.append((postfit-postsaccade)/np.sqrt(dt))
 
-    
 xitn = np.array([a for b in xitn for a in b])
 xitn = xitn[~np.isnan(xitn)]
 #find outliers
@@ -492,20 +499,26 @@ xipooled = np.array([a for b in [xitn,xint] for a in b])
 xipoolediqr = np.percentile(xipooled,75)-np.percentile(xipooled,25)
 xipooledout = xipooled[(xipooled<np.median(xipooled)-1.5*xipoolediqr) | (xipooled>np.median(xipooled)+1.5*xipoolediqr)]
 xipooledfiltered = xipooled[(xipooled>np.median(xipooled)-1.5*xipoolediqr) & (xipooled<np.median(xipooled)+1.5*xipoolediqr)]
-s_xipooledraw = np.std(xipooled) #1.723°
+s_xipooledraw = np.std(xipooled) #0.238° as of 4.3.2022
 #outliers as 1.5 IQR
-s_xipooledfiltered = np.std(xipooledfiltered) #0.0088
+s_xipooledfiltered = np.std(xipooledfiltered) #0.0615
 #outliers as above 99th percentile (probably this is the safest way to go)
-s_xipooledpercentiled = np.std(xipooled[xipooled<np.percentile(xipooled,99)]) #0.0409
+s_xipooledpercentiled = np.std(xipooled[(xipooled<np.percentile(xipooled,99.5)) & 
+                                        (xipooled>np.percentile(xipooled,0.5))]) #0.1435° as of 4.3.2022
 #since values (especially outlier filtered) are similar, it is plausible to use pooled data.
 
 #Motor noise 2: epsilon -> trace during saccade
 #u is temporal derivative of the saccadic trace template, epsilon is calculated as s_eps = sqrt(var_tot-var_xi)/u.
 #Template from Dai et al. 2016
 #choose nice saccades -> ones fitting the template well, use RMS to quantify this.
+#AS OF 23.06 the additive noise is updated to not use the squared error from the linear fits but the square root of it.
+#This lead to a better estimate without removing outliers (i.e. difference of standard deviation with and without outliers
+#is much much smaller now (0.2 to 0.09 as opposed to 1.7 to 0.04 from previous squared error case)).
+#Therefore now I am using the standard deviation estimate with outliers.
+RMSfac = 0.5 #rms factor for exclusion criterion
 
 #temporal->nasal
-epstn = []
+ntn = [] #temporal-nasal deviation of eye traces from saccade fit
 utn = []
 RMSstn = np.zeros(len(tracestn))
 fittedsacs = []
@@ -518,36 +531,43 @@ for idx, trace in enumerate(tracestn):
     fitparams, _ = curve_fit(hlp.saccade_fit_func, t, saccade, method='lm', maxfev=100000)
     fittedsac = hlp.saccade_fit_func(t, *fitparams)
     #NOTE THAT 2-3 CASES FIT A STUPID FLAT LINE! Discard them since u will be zero
-    totnoise = (saccade-fittedsac)**2
+    totnoise = (saccade-fittedsac)/np.sqrt(dt)
     utemp = np.abs(np.diff(fittedsac)) #template u
-    eps = np.sqrt(totnoise-np.var(xipooled[xipooled<np.percentile(xipooled,99)]))[1:] / utemp
-    epstn.append(eps)
+    #I am not very sure if totnoise**2 is appropriate here.
+    #eps = np.sqrt(totnoise**2-s_xipooledpercentiled**2)[1:] / utemp #PROBABLY BUG!!!
+    #!!! TODO: MISTAKE
+    #FIRST CAlCULATE ALL U VALUES, ALONG WITH ALL TOTNOISE (i.e. deviation between fit and trace).
+    #YOU BIN U TOGETHER WITH TOTNOISE (i.e. WITHOUT CALCULATING EPSILON RIGHT OFF THE BAT).
+    #FOR EACH U BIN YOU HAVE A TOTNOISE BIN; EACH TOTNOISE BIN HAS A DISTRIBUTION -> u-dependent total noise distributions
+    #THEN YOU CAN USE THE EQUATION FOR DETERMINING ALPHA*EPSILON. IN CASES WHERE XI IS SMALLER THAN S_M
+    ntn.append(totnoise)
     utn.append(utemp)
-    RMSstn[idx] = np.sqrt(np.mean(totnoise))
+    RMSstn[idx] = np.sqrt(np.mean(totnoise**2))
     fittedsacs.append(fittedsac)
     print(idx)
     if plot == True:
-        fig, axs = plt.subplots(1,4)
+        fig, axs = plt.subplots(1,3)
         axs[0].plot(saccade, 'k-', label='trace')
         axs[0].plot(fittedsac, 'r-', label='fit')
         axs[0].legend()
         axs[0].set_title('Saccade')
-        axs[1].plot(totnoise, 'k.', label=r'$s_m$')
-        axs[1].plot([0, len(totnoise)], [s_xipooledpercentiled,s_xipooledpercentiled], 'r-', label=r'$s_\xi$')
+        axs[1].plot(totnoise, 'k.', label=r'$y_{t} - y_{f}$')
+        axs[1].plot([0, len(totnoise)], [s_xipooledraw,s_xipooledraw], 'r-', label=r'$s_\xi$')
         axs[1].legend()
         axs[1].set_title('Noises')
-        axs[2].plot(eps, 'k.')
-        axs[2].set_title(r'$s_{\epsilon\prime}$')
-        axs[3].plot(utemp, 'k.')
-        axs[3].set_title(r'$u$')
+        axs[2].plot(utemp, 'k.')
+        axs[2].set_title(r'$u$')
         plt.get_current_fig_manager().window.showMaximized()
+        plt.tight_layout()
         plt.pause(0.1)
-        
+
         a = True
         while a == True:
+            plt.tight_layout()
+            plt.waitforbuttonpress()
+            plt.close('all')
             inp = input('c for continue, s for stop \n')
             if inp == 'c':
-                plt.close()
                 break
             elif inp == 's':
                 sys.exit()
@@ -555,14 +575,17 @@ for idx, trace in enumerate(tracestn):
                 inp = input('Wrong button, c for continue, s for stop \n')
         
 #visual inspection to "nice" saccades
-plot = True
-nicesacidxstn = np.where(RMSstn<=np.mean(RMSstn)-0.3*np.std(RMSstn))[0]
+plot = False
+nicesacidxstn = np.where(RMSstn<=np.mean(RMSstn)-RMSfac*np.std(RMSstn))[0]
 if plot == True:
     for idx in nicesacidxstn:
         print(idx, nicesacidxstn, RMSstn[idx])
         fig, ax = plt.subplots(1,1)
-        ax.plot(tracestn[idx][onsettn[idx]+10:offsettn[idx]-100])
-        ax.plot(fittedsacs[idx])
+        ax.plot(tracestn[idx][onsettn[idx]+onsrem:offsettn[idx]-offsrem], label='raw trace')
+        ax.plot(fittedsacs[idx], label='template')
+        ax.set_xlabel('Time [ms]')
+        ax.set_ylabel('Eye position [°]')
+        plt.legend()
         plt.get_current_fig_manager().window.showMaximized()
         plt.pause(0.1)
         a = True
@@ -576,33 +599,114 @@ if plot == True:
             else:
                 inp = input('Wrong button, c for continue, s for stop \n')
             
-epstn = np.array(epstn)
-epstn = np.array([a for b in epstn[nicesacidxstn] for a in b])
+ntn = np.array(ntn)
+ntn = np.array([a for b in ntn[nicesacidxstn] for a in b])
 utn = np.array(utn)
 utn = np.array([a for b in utn[nicesacidxstn] for a in b])
-utn = utn[~np.isnan(epstn) & ~np.isinf(epstn)]
-epstn = epstn[~np.isnan(epstn) & ~np.isinf(epstn)]
 
 #bin u values and epsilon values
-ubinstn = np.linspace(np.min(utn), np.max(utn), 100)
-binnedutn = [[] for a in range(len(ubinstn))]
-binnedepstn = [[] for a in range(len(ubinstn))]
+ubinstn = np.linspace(np.min(utn), np.max(utn), 50)
+binnedutn = [[] for a in range(len(ubinstn))] #u bins
+binnedntn = [[] for a in range(len(ubinstn))] #total noise bins
 
 #sort u and eps into bins
 for idx, u in enumerate(utn):
     ubin = np.where(ubinstn<=u)[0][-1]
     binnedutn[ubin].append(u)
-    binnedepstn[ubin].append(epstn[idx])
+    binnedntn[ubin].append(ntn[idx])
 
 #find average s_eps per bin and then average over all
 ucutoff = 0.01 #u cutoff value since smaller than this causes huge epsilon inflation
-epsperbintn = np.array([np.mean(a) for a in binnedepstn])
-epsperbintn = epsperbintn[ubinstn>ucutoff]
-epsperbintn = epsperbintn[~np.isnan(epsperbintn)]
-s_epstn = np.mean(epsperbintn) #2.06° after trimming saccade from beginning and end and choosing "nice saccades"
+stdnperbintn = np.array([np.std(a) for a in binnedntn]) #standard deviation of total noise
+idxs = (ubinstn>ucutoff) & (stdnperbintn>0) & (~np.isnan(stdnperbintn))
+stdnperbintn = stdnperbintn[idxs]
+ubinstn = ubinstn[idxs]
+s_epstns = 1/np.abs(ubinstn)*np.sqrt(stdnperbintn**2 - s_xipooledpercentiled**2)
+s_epstn = np.mean(s_epstns[~np.isnan(s_epstns)]) #1.824° as of 4.3.2022
 
+#descriptive figures 
+fig, axs = plt.subplots(1, 3)
+axs[0].hist(ntn, color='k', density=True)
+axs[0].set_xlabel(r'$y_{t} - y_{f}$')
+axs[0].set_ylabel(r'Density')
+
+
+axs[1].hist(stdnperbintn, color='k', label='$s_m$', density=True)
+axs[1].plot([s_xipooledpercentiled]*2, axs[1].get_ylim(), 'r-', label=r'$s_{\xi}$')
+axs[1].set_xlabel(r'$s_m$')
+axs[1].set_ylabel(r'Density')
+axs[1].legend()
+
+axs[2].plot(ubinstn, stdnperbintn, 'k-', label='$s_m$')
+axs[2].plot(axs[2].get_xlim(), [s_xipooledpercentiled]*2, 'r-', label=r'$s_{\xi}$')
+axs[2].set_xlabel(r'$u$')
+axs[2].set_ylabel(r'Standard deviation')
+axs[2].legend()
+
+#!!!do an example saccade plot withh fits and stuff
+explot = False
+if explot == True:
+    #Plot style: General figure parameters:
+    figdict = {'axes.titlesize' : 30,
+               'axes.labelsize' : 25,
+               'xtick.labelsize' : 25,
+               'ytick.labelsize' : 25,
+               'legend.fontsize' : 25,
+               'figure.titlesize' : 25,
+               'image.cmap' : 'gray'}
+    plt.style.use(figdict)
+    idx = 8
+    saccadedat = tracesnt[8] #tracesnt[2]
+    """
+    for itr, tr in enumerate(tracesnt):
+        if tr.shape != saccadedat.shape:
+            continue
+        elif False not in (tr == saccadedat):
+            print(itr)
+    """
+    plt.figure()
+    plt.plot(saccadedat)
+    t = np.arange(saccadedat.shape[0])
+    fig, ax = plt.subplots()
+    onset = onsetnt[2]
+    offset = offsetnt[2]
+    
+    #plot the eye trace
+    ax.plot(offset, saccadedat[offset], 'k|', label='saccade onset', markersize=30, mew=3)
+    ax.plot(onset, saccadedat[onset], 'k|', label='saccade onset', markersize=30, mew=3)
+    ax.plot(t[:onset], saccadedat[:onset], 'gray')
+    ax.plot(t[offset:], saccadedat[offset:], 'gray')
+    ax.plot(t[onset:offset], saccadedat[onset:offset], 'k')
+    
+    #nonsaccadic fits - pre
+    presaccade = saccadedat[5:onset-5] #discard 5 ms from beginning and end of presaccadic fixation
+    xpre = np.arange(5,onset-5)
+    preparams, _ = curve_fit(hlp.linear_fit, xpre, presaccade)
+    prefit = hlp.linear_fit(xpre, *preparams)
+    #nonsaccadic fits - post    
+    postsaccade = saccadedat[offset+5:-5] #discard again
+    xpost = np.arange(offset+5,len(saccadedat)-5)
+    postparams, _ = curve_fit(hlp.linear_fit, xpost, postsaccade)
+    postfit = hlp.linear_fit(xpost, *postparams)
+    #plots
+    ax.plot(xpost, postfit, 'r-')
+    ax.plot(xpre, prefit, 'r-')
+    
+    #saccadic fit
+    saccade = saccadedat[onset+onsrem:offset-offsrem]
+    t = np.arange(0, len(saccade))
+    fitparams, _ = curve_fit(hlp.saccade_fit_func, t, saccade, method='lm', maxfev=100000)
+    fittedsac = hlp.saccade_fit_func(t, *fitparams)
+    #plot
+    t = np.arange(onset+onsrem, offset-offsrem)
+    ax.plot(t, fittedsac, 'b-')
+    
+    #figure adjustments
+    ax.set_ylabel('Eye position [°]')
+    ax.set_xlabel('t [ms]')
+    ax.set_title('Example zebrafish eye trace')    
 #nasal->temporal
-epsnt = []
+nnt = []
 unt = []
 RMSsnt = np.zeros(len(tracesnt))
 fittedsacs = []
@@ -614,28 +718,27 @@ for idx, trace in enumerate(tracesnt):
     fitparams, _ = curve_fit(hlp.saccade_fit_func, t, saccade, method='lm', maxfev=100000)
     fittedsac = hlp.saccade_fit_func(t, *fitparams)
     #NOTE THAT 2-3 CASES FIT A STUPID FLAT LINE! Discard them since u will be zero
-    totnoise = (saccade-fittedsac)**2
+    totnoise = (saccade-fittedsac)/np.sqrt(dt)
     utemp = np.abs(np.diff(fittedsac)) #template u
-    eps = np.sqrt(totnoise-np.var(xipooled[xipooled<np.percentile(xipooled,99)]))[1:] / utemp
-    epsnt.append(eps)
+    #eps = np.sqrt(totnoise**2-s_xipooledpercentiled**2)[1:] / utemp
+    #epsnt.append(eps)
+    nnt.append(totnoise)
     unt.append(utemp)
     RMSsnt[idx] = np.sqrt(np.mean(totnoise))
     fittedsacs.append(fittedsac)
     print(idx)
     if plot == True:
-        fig, axs = plt.subplots(1,4)
+        fig, axs = plt.subplots(1,3)
         axs[0].plot(saccade, 'k-', label='trace')
         axs[0].plot(fittedsac, 'r-', label='fit')
         axs[0].legend()
         axs[0].set_title('Saccade')
-        axs[1].plot(totnoise, 'k.', label=r'$s_m$')
-        axs[1].plot([0, len(totnoise)], [s_xipooledpercentiled,s_xipooledpercentiled], 'r-', label=r'$s_\xi$')
+        axs[1].plot(totnoise, 'k.', label=r'$y_{t} - y{f}$')
+        axs[1].plot([0, len(totnoise)], [s_xipooledraw,s_xipooledraw], 'r-', label=r'$s_\xi$')
         axs[1].legend()
         axs[1].set_title('Noises')
-        axs[2].plot(eps, 'k.')
-        axs[2].set_title(r'$s_{\epsilon\prime}$')
-        axs[3].plot(utemp, 'k.')
-        axs[3].set_title(r'$u$')
+        axs[2].plot(utemp, 'k.')
+        axs[2].set_title(r'$u$')
         plt.get_current_fig_manager().window.showMaximized()
         plt.pause(0.1)
         a = True
@@ -653,14 +756,18 @@ for idx, trace in enumerate(tracesnt):
     #on smoothed saccade
 
 #visual inspection to "nice" saccades
-plot = True
-nicesacidxsnt = np.where(RMSsnt<=np.mean(RMSsnt)-0.5*np.std(RMSsnt))[0]
+plot = False
+rmsidxnt = ~np.isnan(RMSsnt)
+nicesacidxsnt = np.where(RMSsnt<=np.mean(RMSsnt[rmsidxnt])-RMSfac*np.std(RMSsnt[rmsidxnt]))
 if plot == True:
     for idx in nicesacidxsnt:
         print(idx, nicesacidxsnt, RMSsnt[idx])
         fig, ax = plt.subplots(1,1)
-        ax.plot(tracesnt[idx][onsetnt[idx]+onsrem:offsetnt[idx]-offsrem])
-        ax.plot(fittedsacs[idx])
+        ax.plot(tracesnt[idx][onsetnt[idx]+onsrem:offsetnt[idx]-offsrem], label='raw trace')
+        ax.plot(fittedsacs[idx], label='template')
+        ax.set_xlabel('Time [ms]')
+        ax.set_ylabel('Eye position [°]')
+        plt.legend()
         plt.get_current_fig_manager().window.showMaximized()
         plt.pause(0.1)
         a = True
@@ -674,28 +781,56 @@ if plot == True:
             else:
                 inp = input('Wrong button, c for continue, s for stop \n')
     
-epsnt = np.array([a for b in epsnt for a in b])
-unt = np.array([a for b in unt for a in b])
-unt = unt[~np.isnan(epsnt) & ~np.isinf(epsnt)]
-epsnt = epsnt[~np.isnan(epsnt) & ~np.isinf(epsnt)]
+
+nnt = np.array(nnt)
+nnt = np.array([a for b in nnt[nicesacidxsnt] for a in b])
+unt = np.array(unt)
+unt = np.array([a for b in unt[nicesacidxsnt] for a in b])
 
 #bin u values and epsilon values
-ubinsnt = np.linspace(np.min(unt), np.max(unt), 100)
-binnedunt = [[] for a in range(len(ubinsnt))]
-binnedepsnt = [[] for a in range(len(ubinsnt))]
+ubinsnt = np.linspace(np.min(unt), np.max(unt), 50)
+binnedunt = [[] for a in range(len(ubinsnt))] #u bins
+binnednnt = [[] for a in range(len(ubinsnt))] #total noise bins
 
 #sort u and eps into bins
 for idx, u in enumerate(unt):
     ubin = np.where(ubinsnt<=u)[0][-1]
     binnedunt[ubin].append(u)
-    binnedepsnt[ubin].append(epsnt[idx])
+    binnednnt[ubin].append(nnt[idx])
 
 #find average s_eps per bin and then average over all
 ucutoff = 0.01 #u cutoff value since smaller than this causes huge epsilon inflation
-epsperbinnt = np.array([np.mean(a) for a in binnedepsnt])
-epsperbinnt = epsperbinnt[ubinsnt>ucutoff]
-epsperbinnt = epsperbinnt[~np.isnan(epsperbinnt)]
-s_epsnt = np.mean(epsperbinnt)
+stdnperbinnt = np.array([np.std(a) for a in binnednnt]) #standard deviation of total noise
+idxs = (ubinsnt>ucutoff) & (stdnperbinnt>0) & (~np.isnan(stdnperbinnt))
+stdnperbinnt = stdnperbinnt[idxs]
+ubinsnt = ubinsnt[idxs]
+s_epsnts = 1/np.abs(ubinsnt)*np.sqrt(stdnperbinnt**2 - s_xipooledpercentiled**2)
+s_epsnt = np.mean(s_epsnts[~np.isnan(s_epsnts)]) #3.544° as of 4.3.2022
+
+#descriptive figures 
+fig, axs = plt.subplots(1, 3)
+axs[0].hist(nnt, color='k', density=True)
+axs[0].set_xlabel(r'$y_{t} - y_{f}$')
+axs[0].set_ylabel(r'Density')
+
+axs[1].hist(stdnperbinnt, color='k', label='$s_m$', density=True)
+axs[1].plot([s_xipooledpercentiled]*2, axs[1].get_ylim(), 'r-', label=r'$s_{\xi}$')
+axs[1].set_xlabel(r'$s_m$')
+axs[1].set_ylabel(r'Density')
+axs[1].legend()
+
+axs[2].plot(ubinsnt, stdnperbinnt, 'k-', label='$s_m$')
+axs[2].plot(axs[2].get_xlim(), [s_xipooledpercentiled]*2, 'r-', label=r'$s_{\xi}$')
+axs[2].set_xlabel(r'$u$')
+axs[2].set_ylabel(r'Standard deviation')
+axs[2].legend()
+
+#do also for nonsaccadic error
+fig, ax = plt.subplots()
+ax.hist(xipooled[(xipooled<np.percentile(xipooled,99.5)) & (xipooled>np.percentile(xipooled,0.5))], 
+        color='k', density=True)
+ax.set_xlabel(r'$y_{t} - y_{f}$')
+ax.set_ylabel(r'Density')
 
 
 #LEAVE THIS FOR NOW! Removing data points improved, you need to come up with a better interpolation.

@@ -48,7 +48,7 @@ for i in range(len(zfparams)):
     rfsimg[rfarr!=0] = rfarr[rfarr!=0]
     rfcents[i,:] = rfcentcar #use the receptive field centers in cartesian coordinates for future decoding
     for j in range(stim.frametot):
-        stimulus = stim.move_stimulus(j, 'right') #shift in positive
+        stimulus, __, __ = stim.move_stimulus(j, 'right') #shift in positive
         rfact = np.sum(rfarr[rfarr!=0]*stimulus[rfarr!=0])
         rfacts[i,j] = np.abs(rfact)
     print(i)
@@ -64,5 +64,11 @@ shiftaf = np.array(hlp.coordinate_transformations.geo2car(1,stim.shiftperfr/rsl,
 realshift = np.sum((shiftaf-shiftbef)**2)
 
 decshift = np.sum(np.diff(stimcent, axis = 0)**2, axis=1)
-plt.plot(np.tile(realshift,len(decshift)), decshift, 'k.')
+fig, ax = plt.subplots(1,1)
+ax.plot(np.tile(realshift,len(decshift)), decshift, 'k.')
+ax.set_ylabel('Decoded shift [°]')
+ax.set_xlabel('Real shift [°]')
+ax.yaxis.set_major_formatter(ScalarFormatter())
+
+ax.set_title('Model performance with global motion')
 shiftdecerr = decshift-realshift

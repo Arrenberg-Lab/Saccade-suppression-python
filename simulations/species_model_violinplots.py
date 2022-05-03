@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 import zf_helper_funcs as hlp
 import pandas as pd
 import matplotlib.ticker as ticker
-loadpath = r'D:\ALPEREN\Tübingen NB\Semester 3\Arrenberg\git\codes\data\simulations'
+loadpath = r'..\data\simulations'
 
 #Species simulation violinplots (macaque and zebrafish)
 
@@ -352,6 +352,8 @@ for idx in range(nnfilters):
     labeldat = [b for a in labeldat for b in a]
     axs[idx].set_xticks(np.arange(0,6,2)+0.5)
     axs[idx].set_xticklabels(np.flip(realshifts[:np.int(len(realshifts)/2)]))
+    axs[idx].plot(axs[idx].get_xlim(), [0,0], 'k-', linewidth=0.8)
+
     """
     for i in range(len(zfdat)):
         axs[idx].text(0+i*2,-70, '(%i)'%(len(zfdat[i])), size=15, horizontalalignment='center')

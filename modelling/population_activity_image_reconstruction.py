@@ -62,6 +62,7 @@ for idx, flt in enumerate(filtersarray2):
 reconstructedimg2 = np.sum(weightedfilters2,0)
 
 fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
+plt.tight_layout()
 axs[0,0].imshow(img)
 axs[0,1].imshow(reconstructedimg)
 axs[1,0].imshow(img2)
