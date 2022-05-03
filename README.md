@@ -7,7 +7,11 @@ Aim of this project is to estimate species-specific sensory and motor noise para
 For the motor noise estimations, zebrafish and macaque saccade recordings were used. Zebrafish saccades were recorded by Giulia Soto, and saccade dataset was obtained from Hafed Lab. The brief explanation of the structure of these dataset can be found in the following:
 
 #### 1) zebrafish dataset
-The dataset is located in the server
+The dataset is located in the server (\\server_ip_replace_value\arrenberg_data\shared\Ibrahim\HSC_saccades), with each recording of a given fish is in a folder with the name HSC_saccades_etc. In each of these folders, there are additional folders for each of the detected saccade for the given fish. In each of these saccade-specific folders, there are metadata files along with a txt file containing eye positions in degrees (eyepos_etc.txt), which is extracted for saccade detection.
+Function extract_saccade_data from zf_helper_funcs automatically extracts all the eye traces in the server folder.
+
+#### 2) macaque dataset
+The macaque dataset is a .mat file and can be found in /data/Hafed_dataset/example_saccades.mat. The file contains a time array (mytime), and arrays (nsaccades x ntime) for horizontal as well as vertical components of the saccades in different directions (up/down + left/right). The preprocessing and loading of the dataset is achieved in the script macaque_saccade_detection.py. Metadata and readme for the dataset can further be found in the .mat file.
 
 
 ### Structure
