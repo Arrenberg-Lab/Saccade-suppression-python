@@ -2,6 +2,8 @@
 
 Aim of this project is to estimate species-specific sensory and motor noise parameters during saccadic behavior according to the Crevecoeur model (Crevecoeur Kording 2017).
 
+Each script contains comments, briefly explaining what each line is meant for. For questions and inquiries, please contact ibrahimalperentunc@protonmail.com
+
 ## Explanation of the dataset structures used externally in the project:
 
 For the motor noise estimations, zebrafish and macaque saccade recordings were used. Zebrafish saccades were recorded by Giulia Soto, and saccade dataset was obtained from Hafed Lab. The brief explanation of the structure of these dataset can be found in the following:
@@ -156,6 +158,7 @@ This script generates all the sensory noise related figures, where stimulus disp
 ## zf_helper_funcs.py and zf_helper_funcs_.py
 These script contains all of the functions and classes used in all other scripts. Each function is documented in detail. zf_helper_funcs_.py is the same as zf_helper_funcs.py, with slight changes in some of the functions. This script was generated while developing the server codes.
 
-Each script contains comments, briefly explaining what each line is meant for. For questions and inquiries, please contact ibrahimalperentunc@protonmail.com
+## Open issues (as of 03.05.2022)
+- The sensory noise is yet to be estimated using updated settings (new parameter distributions, spherical visual field, Gaussian RF profiles).
 
 ### Ibrahim Tunc, 03.05.2022
