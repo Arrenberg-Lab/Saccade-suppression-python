@@ -1,6 +1,6 @@
-## Python code for estimating sensory and motor noise in zebrafish and macaque in saccadic behavior
+# Python code for estimating sensory and motor noise in zebrafish and macaque in saccadic behavior
 
-# Ibrahim Tunc
+### Ibrahim Tunc
 
 Aim of this project is to estimate species-specific sensory and motor noise parameters during saccadic behavior according to the Crevecoeur model (Crevecoeur Kording 2017).
 
