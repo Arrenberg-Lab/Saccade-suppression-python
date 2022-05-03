@@ -136,14 +136,14 @@ scripts in this folder run specific model simulations and saves them in the resp
 Run center of mass decoder moder simulations, where the stimulus is randomly shifted along azimuth only.
 
 #### 2) species_model_simulations_randomstimloc_plots.py 
-This script generates __all__ sensory noise-related __figures__ in my lab rotation, based on the results from species_model_simulations_randomstimloc.py.
+This script generates __horizontal shift__ sensory noise __figures__ in my lab rotation report, based on the results from species_model_simulations_randomstimloc.py.
 
 #### 3) species_model_simulations.py
 This script runs the simulations for the center of mass stimulus position decoder. Here, the stimulus starts at visual field center, and is shifted along the same values of azimuth and elevation. The boolean script 'simulate' (which is True by default) determines if the simulatiins are run. By setting it to False, this script can be used to only generate the RF parameter distributions for zebrafish and macaque. The figure is nonetheless generated when simulate == True.
 FIGURES : 1 Figure 2x2 subplots, showing the RF parameter distributions for zebrafish (upper) and macaque (lower). 
 
 #### 4) species_model_violinplots.py
-Generate the violinplots for the simulations from species_model_simulations.py.
+Generate the violinplots for the simulations from species_model_simulations.py. These violinplots were used for the __oblique shift__ sensory noise __figures__ in my lab rotation report.
 
 #### 5) shift_decoder_simulations.py 
 Runs simulations very similar to species_model_simulations.py but with different stimulus shift values.
