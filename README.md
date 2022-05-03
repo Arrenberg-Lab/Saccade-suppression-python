@@ -36,11 +36,11 @@ Development script for implementing the random pixel motion stimulus in the cyli
 The scripts in this folder are used to generate and test the shift decoder models of different variants. The variations are RF profile (Gaussian or Gabor), visual field (flat or spherical), parameter distributions for the RFs as well as the model architecture (Rechardt-like or center-of-mass-decoder). The scripts in this folder are:
 #### 1) popualtion_activity_shift_decoder.py
 This is an example script, showing how the sensory shift detection model from the laboratory rotation (center of mass stimulus position decoder) works, using Gabor filters and NO geographic coordinate transformations.
-#### FIGURES 
+## FIGURES 
 Visual field with all RFs, 5 example stimulus shifts with real and model stimulus position readouts along with a scatterplot of real and decoded stimulus shifts. The final figure shows the distribution of stimulus shift decoding errors pooled over all stimulus shift magnitudes.
 #### 2) plot_zf_mac_rfs.py
 This script generates an example model of RFs for zebrafish and macaque, using the settings from lab rotation (see also population_activity_shift_decoder.py). 
-#### FIGURES 
+## FIGURES 
 One figure 2x2 showing for zebrafish and macaque the RFs in whole visual field (upper) and in a zoomed region (lower). One figure showing the stimulus shifts. One 2x2 figure showing the parameter histograms for zebrafish (upper) and macaque (lower). 
 
 
