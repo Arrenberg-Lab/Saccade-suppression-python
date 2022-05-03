@@ -2,6 +2,14 @@
 
 Aim of this project is to estimate species-specific sensory and motor noise parameters during saccadic behavior according to the Crevecoeur model (Crevecoeur Kording 2017).
 
+## Explanation of the dataset structures used externally in the project:
+
+For the motor noise estimations, zebrafish and macaque saccade recordings were used. Zebrafish saccades were recorded by Giulia Soto, and saccade dataset was obtained from Hafed Lab. The brief explanation of the structure of these dataset can be found in the following:
+
+#### 1) zebrafish dataset
+The dataset is located in the server
+
+
 ### Structure
 In the following, the content of each of the subfolder is explained:
 
@@ -77,7 +85,7 @@ Example activity of the RF set for a given frame, parameter distributions for th
 This folder includes the scripts used for processing zebrafish and macaque saccades as well as for estimating multiplicative and additive Crevecoeur motor noise variables.
 
 #### 1) zf_saccade_detection_v2.py
-Refined version of the zebrafish saccade detection (from Nyström & Holmqvist 2010). The dataset is recorded by Giulia Soto and can be found in server (\\172.25.250.112\arrenberg_data\shared\Ibrahim\HSC_saccades). 
+Refined version of the zebrafish saccade detection (from Nyström & Holmqvist 2010). The dataset is recorded by Giulia Soto and can be found in server (\\server_ip_replace_value\arrenberg_data\shared\Ibrahim\HSC_saccades). 
 #### FIGURES 
 This script can generate plots for raw saccades & the onset/offset detections, plots showing for each saccade the additive & mutliplicative noises, as well as the plots showing saccades with a decent fit which are chosen for motor noise estimations. The boolean parameter 'plot' in the script determines which plots are skipped, by default it is False overall. Switching it to True before a specific figure line would activate the generation of that specific plot.
 
