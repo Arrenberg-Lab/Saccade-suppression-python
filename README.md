@@ -22,7 +22,7 @@ The raw data of the simulations (RF arrays, RF activity arrays, visual field etc
 In the following, the content of each of the subfolder is explained:
 
 ## /data
-This folder contains the figures (PDF) and model simulation files, along with the macaque superior colliculus anatomical data from Chen et al. 2019 and macaque saccade data from Hafed Lab.
+This folder contains the figures (PDF) and model simulation files, along with the macaque superior colliculus anatomical data from Chen et al. 2019 and macaque saccade data from Hafed Lab. Sensory model simulation data can also be found here. The test data for running server code is in the server_codes folder.
 
 ## /development_scripts
 The scripts in this folder are used for test purposes and/or developing the main scripts, and can be completely ignored. Some of the important scripts are the following:
