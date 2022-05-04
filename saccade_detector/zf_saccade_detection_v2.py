@@ -603,26 +603,40 @@ ntn = np.array(ntn)
 ntn = np.array([a for b in ntn[nicesacidxstn] for a in b])
 utn = np.array(utn)
 utn = np.array([a for b in utn[nicesacidxstn] for a in b])
+(utn, ntn) = zip( *sorted( zip(utn, ntn) ) ) #sort u and noise arrays in ascending u order
+utn = np.array(utn)
+ntn = np.array(ntn)
 
-#bin u values and epsilon values
-ubinstn = np.linspace(np.min(utn), np.max(utn), 50)
-binnedutn = [[] for a in range(len(ubinstn))] #u bins
-binnedntn = [[] for a in range(len(ubinstn))] #total noise bins
+#bin u values and epsilon values -> 03.05.2022 : Bin it per percentile, that you take first 100 smallest u values 
+#and bin is the average value of these 100 values. -> This is almost like logarithmic.
+#Alternative idea is logarithmic binning of u
+nperbin = 100 #number of datapoints per bin
 
-#sort u and eps into bins
-for idx, u in enumerate(utn):
-    ubin = np.where(ubinstn<=u)[0][-1]
-    binnedutn[ubin].append(u)
-    binnedntn[ubin].append(ntn[idx])
+ubinstn = []
+binnedutn = [] #u bins
+binnedntn = [] #total noise bins
+
+for k in range(np.ceil(len(utn)/nperbin).astype(int)):
+    print(k*nperbin, k*nperbin+nperbin)
+    if k*nperbin+nperbin < len(utn):
+        us = utn[k*nperbin : k*nperbin+nperbin]
+        ns = ntn[k*nperbin : k*nperbin+nperbin]
+    else:
+        us = utn[k*nperbin:]
+        ns = ntn[k*nperbin:]
+    ubinstn.append(np.mean(us))
+    binnedutn.append(us)
+    binnedntn.append(ns)
+    
+ubinstn = np.array(ubinstn)  
 
 #find average s_eps per bin and then average over all
 ucutoff = 0.01 #u cutoff value since smaller than this causes huge epsilon inflation
+usidx = np.where(ubinstn>ucutoff)[0][0] #the first u bin index value bigger than cutoff
+
 stdnperbintn = np.array([np.std(a) for a in binnedntn]) #standard deviation of total noise
-idxs = (ubinstn>ucutoff) & (stdnperbintn>0) & (~np.isnan(stdnperbintn))
-stdnperbintn = stdnperbintn[idxs]
-ubinstn = ubinstn[idxs]
-s_epstns = 1/np.abs(ubinstn)*np.sqrt(stdnperbintn**2 - s_xipooledpercentiled**2)
-s_epstn = np.mean(s_epstns[~np.isnan(s_epstns)]) #1.824° as of 4.3.2022
+s_epstns = 1/np.abs(ubinstn[usidx:])*np.sqrt(stdnperbintn[usidx:]**2 - s_xipooledpercentiled**2)
+s_epstn = np.mean(s_epstns[~np.isnan(s_epstns)]) #1.824 as of 4.3.2022, 7.818 (!) after binning u according to percentiles.
 
 #descriptive figures 
 fig, axs = plt.subplots(1, 3)
@@ -637,7 +651,7 @@ axs[1].set_xlabel(r'$s_m$')
 axs[1].set_ylabel(r'Density')
 axs[1].legend()
 
-axs[2].plot(ubinstn, stdnperbintn, 'k-', label='$s_m$')
+axs[2].plot(ubinstn[usidx:], stdnperbintn[usidx:], 'k.-', label='$s_m$')
 axs[2].plot(axs[2].get_xlim(), [s_xipooledpercentiled]*2, 'r-', label=r'$s_{\xi}$')
 axs[2].set_xlabel(r'$u$')
 axs[2].set_ylabel(r'Standard deviation')
@@ -786,26 +800,38 @@ nnt = np.array(nnt)
 nnt = np.array([a for b in nnt[nicesacidxsnt] for a in b])
 unt = np.array(unt)
 unt = np.array([a for b in unt[nicesacidxsnt] for a in b])
+(unt, nnt) = zip( *sorted( zip(unt, nnt) ) ) #sort u and noise arrays in ascending u order
+unt = np.array(unt)
+nnt = np.array(nnt)
 
-#bin u values and epsilon values
-ubinsnt = np.linspace(np.min(unt), np.max(unt), 50)
-binnedunt = [[] for a in range(len(ubinsnt))] #u bins
-binnednnt = [[] for a in range(len(ubinsnt))] #total noise bins
+#bin u values and epsilon values, again do similar percentile approach -> first 100 smallest values first bin etc
+nperbin = 100 #number of datapoints per bin
 
-#sort u and eps into bins
-for idx, u in enumerate(unt):
-    ubin = np.where(ubinsnt<=u)[0][-1]
-    binnedunt[ubin].append(u)
-    binnednnt[ubin].append(nnt[idx])
+ubinsnt = []
+binnedunt = [] #u bins
+binnednnt = [] #total noise bins
+
+for k in range(np.ceil(len(unt)/nperbin).astype(int)):
+    print(k*nperbin, k*nperbin+nperbin)
+    if k*nperbin+nperbin < len(unt):
+        us = unt[k*nperbin : k*nperbin+nperbin]
+        ns = nnt[k*nperbin : k*nperbin+nperbin]
+    else:
+        us = unt[k*nperbin:]
+        ns = nnt[k*nperbin:]
+    ubinsnt.append(np.mean(us))
+    binnedunt.append(us)
+    binnednnt.append(ns)
+    
+ubinsnt = np.array(ubinsnt)  
 
 #find average s_eps per bin and then average over all
 ucutoff = 0.01 #u cutoff value since smaller than this causes huge epsilon inflation
+usidx = np.where(ubinsnt>ucutoff)[0][0] #the first u bin index value bigger than cutoff
+
 stdnperbinnt = np.array([np.std(a) for a in binnednnt]) #standard deviation of total noise
-idxs = (ubinsnt>ucutoff) & (stdnperbinnt>0) & (~np.isnan(stdnperbinnt))
-stdnperbinnt = stdnperbinnt[idxs]
-ubinsnt = ubinsnt[idxs]
-s_epsnts = 1/np.abs(ubinsnt)*np.sqrt(stdnperbinnt**2 - s_xipooledpercentiled**2)
-s_epsnt = np.mean(s_epsnts[~np.isnan(s_epsnts)]) #3.544° as of 4.3.2022
+s_epsnts = 1/np.abs(ubinsnt[usidx:])*np.sqrt(stdnperbinnt[usidx:]**2 - s_xipooledpercentiled**2)
+s_epsnt = np.mean(s_epsnts[~np.isnan(s_epsnts)]) #1.824 as of 4.3.2022, 10.208(!) as of 03.05 after percentile binning
 
 #descriptive figures 
 fig, axs = plt.subplots(1, 3)
@@ -819,7 +845,7 @@ axs[1].set_xlabel(r'$s_m$')
 axs[1].set_ylabel(r'Density')
 axs[1].legend()
 
-axs[2].plot(ubinsnt, stdnperbinnt, 'k-', label='$s_m$')
+axs[2].plot(ubinsnt[usidx:], stdnperbinnt[usidx:], 'k.-', label='$s_m$')
 axs[2].plot(axs[2].get_xlim(), [s_xipooledpercentiled]*2, 'r-', label=r'$s_{\xi}$')
 axs[2].set_xlabel(r'$u$')
 axs[2].set_ylabel(r'Standard deviation')

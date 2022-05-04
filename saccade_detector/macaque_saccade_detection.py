@@ -322,7 +322,7 @@ s_epsur, uur, s_epsurall, tnur, nbur = hlp.macaque_eps_estimation(ur, xipperc, o
                                                  onsrem = 5, offsrem=5, fplot=False, nplot=False)
 s_epsavg = np.sum(np.array([s_epsdl,s_epsdr, s_epsul, s_epsur]) * 
                   np.array([dl.shape[0], dr.shape[0], ul.shape[0], ur.shape[0]])) / \
-                  np.sum(np.array([dl.shape[0], dr.shape[0], ul.shape[0], ur.shape[0]])) #0.0961
+                  np.sum(np.array([dl.shape[0], dr.shape[0], ul.shape[0], ur.shape[0]])) #0.177 as of 03.05
 
 #descriptive figures
 totnoise = np.concatenate([tndl, tndr, tnul, tnur]) 
@@ -341,9 +341,9 @@ axs[1].legend()
 
 for i, (u,n) in enumerate(zip([udl, udr, uul, uur], [nbdl, nbdr, nbul, nbur])):
     if i == 0:
-        axs[2].plot(u, n, 'k-', label='$s_m$')
+        axs[2].plot(u, n, 'k.-', label='$s_m$')
     else:
-        axs[2].plot(u, n, 'k-')
+        axs[2].plot(u, n, 'k.-')
 axs[2].plot(axs[2].get_xlim(), [sxipooled[-1]]*2, 'r-', label=r'$s_{\xi}$')
 axs[2].set_xlabel(r'$u$')
 axs[2].set_ylabel(r'Standard deviation')

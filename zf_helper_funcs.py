@@ -1787,24 +1787,37 @@ def macaque_eps_estimation(sacarr, xi, onset, offset, ucutoff= 0.01, RMSfac=0.5,
     nl = np.array([a for b in nl[nicesacidxs] for a in b])
     ul = np.array(ul)
     ul = np.array([a for b in ul[nicesacidxs] for a in b])
+    (ul, nl) = zip( *sorted( zip(ul, nl) ) ) #sort u and noise arrays in ascending u order
+    ul = np.array(ul)
+    nl = np.array(nl)
+
+    #bin u values and epsilon values -> use the percentile approach you also used in zf
+    nperbin = 100 #number of datapoints per bin
+
+    ubins = []
+    binnedu = [] #u bins
+    binnedn = [] #total noise bins
     
-    #bin u values and epsilon values
-    ubins = np.linspace(np.min(ul), np.max(ul), 50)
-    binnedu = [[] for a in range(len(ubins))]
-    binnedn = [[] for a in range(len(ubins))]
-    
-    #sort u and eps into bins
-    for idx, u in enumerate(ul):
-        ubin = np.where(ubins<=u)[0][-1]
-        binnedu[ubin].append(u)
-        binnedn[ubin].append(nl[idx])
+    for k in range(np.ceil(len(ul)/nperbin).astype(int)):
+        print(k*nperbin, k*nperbin+nperbin)
+        if k*nperbin+nperbin < len(ul):
+            us = ul[k*nperbin : k*nperbin+nperbin]
+            ns = nl[k*nperbin : k*nperbin+nperbin]
+        else:
+            us = ul[k*nperbin:]
+            ns = nl[k*nperbin:]
+        ubins.append(np.mean(us))
+        binnedu.append(us)
+        binnedn.append(ns)
+        
+    ubins = np.array(ubins)  
     
     #find average s_eps per bin and then average over all
+    ucutoff = 0.01 #u cutoff value since smaller than this causes huge epsilon inflation
+    usidx = np.where(ubins>ucutoff)[0][0] #the first u bin index value bigger than cutoff
+    
     stdnperbin = np.array([np.std(a) for a in binnedn]) #standard deviation of total noise
-    idxs = (ubins>ucutoff) & (stdnperbin>0) & (~np.isnan(stdnperbin))
-    stdnperbin = stdnperbin[idxs]
-    ubins = ubins[idxs]
-    s_epss = 1/np.abs(ubins)*np.sqrt(stdnperbin**2 - varxi)
+    s_epss = 1/np.abs(ubins[usidx:])*np.sqrt(stdnperbin[usidx:]**2 - varxi)
     s_eps = np.mean(s_epss[~np.isnan(s_epss)]) 
 
     return s_eps, ubins, s_epss, nl, stdnperbin
